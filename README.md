@@ -2,178 +2,150 @@
 
 # unVBN: Vizrt `.vbn` images on macOS and Windows
 
-A small macOS app that makes Vizrt Viz Artist / Viz Engine `.vbn` image files viewable on a Mac:
+Vizrt Viz Artist / Viz Engine store their images and animations as `.vbn` files, which no regular image
+app can open. unVBN makes them viewable on a Mac and on Windows, and on the Mac also converts animations
+to video.
 
-- **Quick Look preview** (space bar in Finder)
-- **Finder thumbnails**
-- **Double-click → opens as a PNG in Preview (Aperçu)**, plus *File > Export PNG…* for the last file opened
-- **Sequence export**: an animation stored as `NAME_00000.vbn` … `NAME_00749.vbn` becomes a **PNG sequence**,
-  **MP4** (H.264) or **WebM** (VP9 with alpha), at 50 fps by default.
-  From the app window or the `unvbn` command-line tool.
+| | macOS | Windows |
+|---|---|---|
+| Thumbnails | Finder | Explorer |
+| Preview | Quick Look (space bar) | Windows Photo Viewer |
+| Double-click | Opens as a PNG in Preview | Opens in Windows Photo Viewer |
+| Other apps | – | Any app that reads images through Windows' WIC |
+| Animations → PNG sequence, MP4, WebM | ✅ app + `unvbn` command line | – |
 
-The format itself is documented in [`FORMAT.md`](FORMAT.md). The Python reference decoder is in `reference/`.
-
-**Windows**: a small codec lets Windows itself open `.vbn` files, with no conversion. See [Windows](#windows).
+Download: **[Releases](https://github.com/notjeremie/unVBN/releases)**. The format is documented in
+[`FORMAT.md`](FORMAT.md).
 
 ## Install
 
-```sh
-scripts/install.sh          # builds Release, copies unVBN.app to ~/Applications, registers it
-```
+### macOS (14 or later, Apple silicon and Intel)
 
-To do it by hand, copy `unVBN.app` to `~/Applications/`, launch it once, then run `qlmanage -r`. Launching
-the app registers the `.vbn` type and the two Quick Look extensions (`pluginkit -m -v | grep -i vbn`
-should list `com.notjeremie.unvbn.preview` and `com.notjeremie.unvbn.thumbnail`).
+1. Download `unVBN-<version>.dmg` and drag **unVBN** to Applications.
+2. Launch it once (this registers the `.vbn` type and the Quick Look extensions), then quit it.
 
-## Exporting sequences
+From then on, the space bar and thumbnails work in Finder. The app is signed with a Developer ID and
+notarized by Apple.
 
-**In the app**: drop a folder of frames (or any one frame) on the unVBN window or Dock icon, or use
-*File > Export Sequence…* (⇧⌘E). Pick the format and frame rate, then *Export…*. A folder holding several
-sequences offers a picker.
+### Windows (10 or 11)
 
-**On the command line**: the tool is inside the app. Link it once:
+1. Download `unVBN-windows-<version>-x64.msi`. Use the `-arm64.msi` only on an ARM PC (Snapdragon laptop,
+   Surface Pro X); *Settings > System > About* shows which one you have.
+2. Run it. The installer is not code-signed, so Windows SmartScreen warns first: *More info > Run anyway*.
+   It needs administrator rights and installs to `C:\Program Files\unVBN\`.
+3. If thumbnails don't appear right away, restart Explorer (Task Manager > *Windows Explorer* > *Restart*).
+
+Uninstall from *Settings > Apps*. If another program (such as a Vizrt install) already owns the `.vbn` file
+type, unVBN keeps its default app and thumbnails and only adds itself to *Open with*.
+
+## Using it
+
+### macOS: viewing
+
+- **Space bar** in Finder: Quick Look preview. **Thumbnails** appear in Finder.
+- **Double-click** a `.vbn`: it opens as a PNG in Preview (the app converts it to a temporary PNG, because
+  Apple has no way for third parties to teach Preview a new format). *File > Export PNG…* saves that PNG.
+
+### macOS: converting animations
+
+An animation is a folder of numbered frames, `NAME_00000.vbn` … `NAME_00749.vbn`. unVBN turns it into:
+
+| Format | Transparency | Notes |
+|---|---|---|
+| PNG sequence | yes | One PNG per frame, same names as the source frames. |
+| MP4 (H.264) | no | Transparent areas are flattened onto a background colour (black by default). BT.709. |
+| WebM (VP9) | yes | Plays with transparency in Chrome and Firefox. |
+
+**In the app**: drop the folder (or any one frame) on the unVBN window or Dock icon, or use
+*File > Export Sequence…* (⇧⌘E). Pick the format and frame rate (50 fps by default), then *Export…*.
+A progress bar shows the frame, speed and time left, also on the Dock icon. A folder holding several
+animations offers a picker.
+
+**On the command line**: the `unvbn` tool is inside the app. Link it once:
 
 ```sh
 ln -s ~/Applications/unVBN.app/Contents/Helpers/unvbn /usr/local/bin/unvbn   # or any folder on your PATH
 unvbn info LOGO_FOLDER/                       # name, frame count, size, missing frames
 unvbn LOGO_FOLDER/ -f webm                    # -> LOGO.webm next to the folder
 unvbn LOGO_00000.vbn -f mp4 --fps 25 -o logo.mp4
-unvbn ALL_LOGOS/ -f png                       # every sequence in the folder -> NAME_png/ folders
+unvbn ALL_LOGOS/ -f png                       # every animation in the folder -> NAME_png/ folders
 unvbn LOGO_FOLDER/ -f mp4 --background '#FFFFFF'
+unvbn LOGO_FOLDER/ -f webm --crf 20           # WebM quality: 0 (best) … 63, default 30
 ```
 
-| Format | Alpha | Notes |
-|---|---|---|
-| `png` | yes | One PNG per frame, same names as the source frames. |
-| `mp4` | no | H.264, BT.709. Transparency is flattened onto `--background` (black by default). Odd sizes are padded by 1 px. |
-| `webm` | yes | VP9 `yuva420p`, `--crf` 30 by default (0 best … 63). Plays with transparency in Chrome and Firefox. |
+Frames are ordered by the number at the end of their names. Gaps in the numbering are reported and
+skipped; every frame must have the same size.
 
-Frames are numbered by the digits at the end of their names. Gaps in the numbering are reported and skipped,
-and every frame must have the same size.
+### Windows
 
-## How it works
+Once installed, Windows reads `.vbn` like one of its own image formats: thumbnails in Explorer,
+double-click opens Windows Photo Viewer, and apps that load images through WIC (the Windows Imaging
+Component) can open them. Windows does not convert or export anything.
 
-Apple has no public ImageIO plug-in API, so no app can teach Preview itself to read a new image format.
-unVBN works around this in two ways:
+## Good to know
 
-- **Quick Look**: two app extensions. `unVBNPreview` is a data-based preview (`QLPreviewProvider`) that
-  returns a PNG. `unVBNThumbnail` (`QLThumbnailProvider`) draws the image aspect-fit.
-- **Double-click**: the app is registered as the *Viewer* for `com.vizrt.vbn`. It decodes the file,
-  writes `$TMPDIR/unVBN/<name>.png` and opens that file in Preview (`com.apple.Preview`). When the app
-  is launched only to open files, it shows no window. When it is launched on its own, a small window
-  with *Open .vbn…* and *Export PNG…* appears.
+- **No sound.** A `.vbn` holds one image; an animation is just a folder of frames. Sound on air comes
+  from elsewhere in the playout system, so exported videos are silent.
+- **Windows Photos app**: it does not use installed codecs, so it can't open `.vbn`. Double-click
+  (Windows Photo Viewer) works instead.
+- **Colours before 0.3.0 were wrong** for uncompressed `.vbn` files: red and blue were swapped (a red logo
+  showed blue). Compressed (DXT5) files were fine. Re-export anything made from uncompressed files with an
+  older version.
+- **WebM on Intel Macs** is slower than on Apple silicon (the bundled encoder uses plain C there).
+- **Transparency**: every real `.vbn` checked so far was opaque; transparency handling is verified on test
+  images.
 
-The type `com.vizrt.vbn` (extension `vbn`, conforms to `public.image` and `public.data`) is declared as
-an **imported** type in `App/Info.plist`. The format belongs to Vizrt, not to this app, and an imported
-declaration gives way to Vizrt's own if one is ever installed.
+## Development
 
-### Targets
+Real Viz files belong to whoever made them: **never commit them**. `*.vbn` and `samples/` are git-ignored;
+the real-sample tests read `samples/` when it exists and are skipped otherwise.
+
+### macOS app
+
+`project.yml` is the source of truth; `unVBN.xcodeproj` is generated with
+[XcodeGen](https://github.com/yonaskolb/XcodeGen) and committed. After editing `project.yml`, run
+`xcodegen generate` and commit both.
+
+```sh
+scripts/build-ffmpeg.sh     # once: the minimal LGPL ffmpeg used for WebM (pinned, checksummed sources, ~1 min)
+xcodebuild -project unVBN.xcodeproj -scheme unVBN -destination 'platform=macOS' -derivedDataPath build/DerivedData test
+scripts/install.sh          # Release build, installed to ~/Applications and registered
+```
+
+Without the bundled ffmpeg the app still builds; WebM then falls back to a Homebrew ffmpeg in debug builds.
+`UNVBN_FFMPEG=/path/to/ffmpeg` overrides the choice.
 
 | Target | What |
 |---|---|
-| `VBNCore` | Static framework: `VBNImage.decode(data:) -> CGImage` (upright, non-premultiplied alpha), `VBNImage.decodeRGBA`, `pngData`, `QuickLZ` (1.5 level 3), `BC3` (DXT5). Linked statically into each target, so there is no embedded framework to sign. |
-| `VBNExport` | Static framework: `FrameSequence` (finds and orders frames), `SequenceExporter` (PNG / AVAssetWriter H.264 / ffmpeg pipe for WebM). |
-| `unVBN` | Host app (AppKit plus SwiftUI), `App/`. Embeds `unvbn` and `ffmpeg` in `Contents/Helpers/`. |
-| `unvbn-cli` | The `unvbn` command-line tool, `CLI/`. (The target name differs from the app's by more than case: on a case-insensitive disk they would share build folders.) |
-| `unVBNPreview` | Quick Look preview extension, `Preview/`. Sandboxed, as Quick Look requires. |
-| `unVBNThumbnail` | Quick Look thumbnail extension, `Thumbnail/`. Sandboxed. |
-| `VBNCoreTests` | Unit tests, `Tests/VBNCoreTests/` and `Tests/VBNExportTests/`. |
+| `VBNCore` | The decoder: header, QuickLZ 1.5 level 3, BC3 (DXT5), upright RGBA with straight alpha. |
+| `VBNExport` | `FrameSequence` (finds and orders frames) and `SequenceExporter` (PNG, AVAssetWriter H.264, ffmpeg pipe for WebM), with progress reporting. |
+| `unVBN` | The app (AppKit + SwiftUI). Embeds `unvbn` and `ffmpeg` in `Contents/Helpers/`. |
+| `unvbn-cli` | The `unvbn` tool (target name differs from the app's by more than case: on a case-insensitive disk they would share build folders). |
+| `unVBNPreview`, `unVBNThumbnail` | Sandboxed Quick Look extensions (`QLPreviewProvider`, `QLThumbnailProvider`). |
+| `VBNCoreTests` | Synthetic fixtures for every variant and error case, export tests, and the real-sample comparison. |
 
-Deployment target: macOS 14. This is the oldest version still getting security updates. The APIs used
-need macOS 12 or later (`QLPreviewReply`, data-based previews).
-
-## Build and test
-
-WebM export uses a minimal ffmpeg (LGPL, libvpx linked statically, universal) that unVBN bundles.
-Build it once with `scripts/build-ffmpeg.sh` (downloads pinned, checksummed ffmpeg and libvpx sources;
-about a minute; output in `build/ffmpeg/`). Without it the app still builds, and WebM falls back to a
-Homebrew ffmpeg if there is one. `UNVBN_FFMPEG=/path/to/ffmpeg` overrides the choice.
-
-`project.yml` is the source of truth. `unVBN.xcodeproj` is generated with [XcodeGen](https://github.com/yonaskolb/XcodeGen)
-and committed, so the project opens without XcodeGen. After editing `project.yml`, run `xcodegen generate` and commit both.
-
-```sh
-xcodegen generate
-xcodebuild -project unVBN.xcodeproj -scheme unVBN -destination 'platform=macOS' -derivedDataPath build/DerivedData test
-xcodebuild -project unVBN.xcodeproj -scheme unVBN -configuration Release -derivedDataPath build/DerivedData build
-```
-
-The tests build small synthetic files in code: raw RGBA 4×4, DXT5 8×4 with known blocks, and QuickLZ
-streams (all-literal, stored, 1-byte and 2-byte back-references). They also check the error cases.
-`RealSampleTests` decodes real `.vbn` files and compares each one pixel for pixel against the `X.png`
-the Python reference wrote next to `X.vbn`. It reads `samples/` at the repo root (git-ignored) by default;
-point it elsewhere with `TEST_RUNNER_VBN_SAMPLES_DIR=/path xcodebuild … test`. The test is skipped when the folder does not exist.
-**Real Viz files belong to whoever made them: never commit them** (`*.vbn` and `samples/` are git-ignored).
-
-To check by hand:
+`com.vizrt.vbn` is declared as an **imported** type: the format belongs to Vizrt, and an imported
+declaration gives way to Vizrt's own if one is ever installed. Checking by hand:
 
 ```sh
 qlmanage -t -x -s 256 -o /tmp/thumbs file.vbn   # thumbnail through quicklookd (-x), as Finder does
 qlmanage -p file.vbn                            # preview window
-open file.vbn                                   # PNG opens in Preview
 ```
 
-Without `-x`, `qlmanage -t` computes thumbnails in-process, and on this Mac that hung for app-extension
-thumbnailers. Finder always goes through the server, so use `-x`.
+### Windows codec
 
-## Install from a release
-
-Download `unVBN-<version>.dmg` from [Releases](https://github.com/notjeremie/unVBN/releases), drag
-**unVBN** to Applications, launch it once (this registers the `.vbn` type and the Quick Look extensions),
-then quit it. Space bar and thumbnails work in Finder from then on. Releases are signed with a Developer ID
-and notarized by Apple.
-
-## Signing and distribution
-
-`project.yml` uses **ad-hoc signing** (`CODE_SIGN_IDENTITY = -`, no team), so anyone can build and run
-locally. `scripts/release.sh` builds the distributable dmg: it passes the Developer ID settings on the
-command line (team, hardened runtime, secure timestamp, no `get-task-allow`), verifies the signature,
-packages and signs the dmg, then notarizes and staples it.
-
-```sh
-xcrun notarytool store-credentials <profile> --apple-id <apple-id> --team-id <TEAM_ID>   # once
-TEAM_ID=<TEAM_ID> NOTARY_PROFILE=<profile> scripts/release.sh                            # -> build/release/
-```
-
-It builds in `$TMPDIR`, not in the repo: iCloud Drive tags files under `~/Documents` with
-`com.apple.FinderInfo`, which `codesign --strict` and notarization reject.
-
-The app icon is drawn in code: `scripts/make-icon.sh` runs `scripts/make-icon.swift` and rebuilds
-`App/Assets.xcassets/AppIcon.appiconset` and `docs/icon.png`.
-
-## Windows
-
-`windows/` holds a **WIC codec** (Windows Imaging Component, the system's image-decoding layer) for `.vbn`.
-Once installed, Windows reads `.vbn` like a built-in image format. It only opens files: no conversion, no export.
-
-- **Explorer thumbnails**, drawn by the codec's own thumbnail handler (Windows 10's generic photo thumbnailer
-  does not draw third-party formats, so unVBN does not rely on it).
-- **Double-click** opens the image in **Windows Photo Viewer** (built into Windows 10 and 11), unless you
-  already chose another default app for `.vbn`.
-- **Any app that loads images through WIC** can open `.vbn`. The **Photos** app does not: it only reads
-  formats it ships with or gets from the Microsoft Store.
-
-**Install**: download `unVBN-windows-<version>-x64.msi` (or `-arm64.msi` on an ARM PC such as a Surface Pro X
-or a Snapdragon laptop) from [Releases](https://github.com/notjeremie/unVBN/releases) and run it. It needs
-administrator rights and installs to `C:\Program Files\unVBN\`. Uninstall from *Settings > Apps*. If thumbnails
-don't appear right away, restart Explorer (Task Manager > *Windows Explorer* > *Restart*). The MSI is not code-signed, so
-Windows SmartScreen shows a warning first: *More info > Run anyway*.
-
-If another program (such as a Vizrt install) already owns the `.vbn` file type, the codec does not take over
-its default app or thumbnail handler; it only adds itself to WIC and *Open with*.
-
-How it is built:
+`windows/` is a C++17 WIC codec built with CMake and Visual Studio 2022.
 
 | Part | What |
 |---|---|
-| `windows/src/vbn_decode.*` | Portable C++17 port of `VBNCore`, pixel-identical to it. QuickLZ output is capped at the size the header requires, so a hostile file cannot make Explorer allocate gigabytes. |
-| `windows/src/wic_codec.cpp` | The COM DLL: the WIC decoder (`IWICBitmapDecoder` + frame, 32bpp BGRA, straight alpha, magic-number pattern `1E F1 0D 90`), the Explorer thumbnail handler (`IThumbnailProvider`), and `DllRegisterServer` / `DllUnregisterServer`, the single source of truth for the registry entries. |
-| `windows/installer/unVBN.wxs` | WiX v4 per-machine MSI that installs the DLL and calls its self-registration. |
-| `windows/test/` | `test_decode` (portable decoder tests, also run on macOS) and `wic_test` (decodes through WIC itself, so it only passes when the codec is registered). |
+| `windows/src/vbn_decode.*` | Portable port of `VBNCore`, pixel-identical to it. QuickLZ output is capped at the size the header requires, so a hostile file can't make Explorer allocate gigabytes. |
+| `windows/src/wic_codec.cpp` | The COM DLL: WIC decoder (32bpp BGRA, straight alpha, magic-number pattern `1E F1 0D 90`), Explorer thumbnail handler (`IThumbnailProvider`), and `DllRegisterServer` / `DllUnregisterServer`, the single source of truth for the registry entries. |
+| `windows/installer/unVBN.wxs` | WiX v4 per-machine MSI with a short wizard; installs the DLL and calls its self-registration. |
+| `windows/test/` | `test_decode` (portable, also runs on macOS) and `wic_test` (decodes through WIC itself, short-read streams, Explorer thumbnails). |
 
-CI (`.github/workflows/windows.yml`) builds x64 and ARM64 on GitHub's Windows runners, runs both test
-programs, registers the codec with `regsvr32`, then installs and uninstalls the MSI and checks WIC before and
-after. To build by hand on Windows (Visual Studio 2022, CMake):
+CI (`.github/workflows/windows.yml`) builds x64 and ARM64, runs both test programs, registers the codec
+with `regsvr32`, then installs and uninstalls the MSI and checks everything before and after. The MSIs are
+the run's artifacts. By hand, on Windows:
 
 ```bat
 cmake -S windows -B build -A x64 -DUNVBN_VERSION=0.3.0
@@ -181,12 +153,27 @@ cmake --build build --config Release
 regsvr32 build\Release\unvbn_wic.dll        &:: as administrator; regsvr32 /u to remove
 ```
 
-The portable decoder test also runs on a Mac: `clang++ -std=c++17 windows/src/vbn_decode.cpp windows/test/test_decode.cpp -o test_decode && ./test_decode`.
+On a Mac: `clang++ -std=c++17 windows/src/vbn_decode.cpp windows/test/test_decode.cpp -o test_decode && ./test_decode`.
+
+### Releasing
+
+1. Bump `MARKETING_VERSION` in `project.yml` (the Windows build reads it too) and push; CI builds the MSIs.
+2. Mac: `TEAM_ID=<TEAM_ID> NOTARY_PROFILE=<profile> scripts/release.sh` builds the Developer ID–signed,
+   notarized dmg in `build/release/`. It builds in `$TMPDIR`: iCloud Drive tags files under `~/Documents`
+   with attributes that `codesign --strict` and notarization reject. The notary profile is created once
+   with `xcrun notarytool store-credentials <profile> --apple-id <apple-id> --team-id <TEAM_ID>`.
+3. Download the MSIs from the CI run (`gh run download`), tag, and attach the dmg and both MSIs to the
+   GitHub release.
+
+Before publishing, check the binaries with `strings` for local paths (`/Users/`) and anything internal.
+
+The app icon is drawn in code: `scripts/make-icon.sh` rebuilds `App/Assets.xcassets/AppIcon.appiconset`
+and `docs/icon.png`.
 
 ## License
 
 [MIT](LICENSE). Vizrt and Viz Artist / Viz Engine are trademarks of Vizrt; this project is not affiliated
 with Vizrt. The format was documented by reading files, for interoperability.
 
-The bundled ffmpeg is LGPL-2.1-or-later and libvpx is BSD-3-Clause: see
+The ffmpeg bundled in the Mac app is LGPL-2.1-or-later and libvpx is BSD-3-Clause: see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) (also inside the app, in `Contents/Resources/`).
