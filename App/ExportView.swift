@@ -4,17 +4,22 @@ import UniformTypeIdentifiers
 import VBNExport
 
 /// State of the export panel: the sequences found in what was dropped, the chosen settings and the job.
+/// One folder or frame: pick one of its sequences. Several folders: a batch, every sequence exported in
+/// turn with the same settings.
 @MainActor
 final class ExportModel: ObservableObject {
     @Published var sequences: [FrameSequence] = []
     @Published var selected = 0
+    @Published private(set) var isBatch = false
+    /// While a batch runs: the sequence being exported (1-based) and how many there are.
+    @Published private(set) var batchPosition: (current: Int, count: Int)?
     @Published var format: ExportFormat = .webm
     @Published var fps: Double = 50
     @Published var background: Color = .black
     /// The running export's progress; nil when idle. AppDelegate observes it for the window title and Dock tile.
     @Published private(set) var progress: ExportProgress?
     @Published private(set) var status: String?
-    @Published private(set) var lastOutput: URL?
+    @Published private(set) var lastOutputs: [URL] = []
     @Published var errorMessage: String?
 
     let ffmpeg = FFmpeg.locate()
@@ -22,62 +27,134 @@ final class ExportModel: ObservableObject {
 
     var sequence: FrameSequence? { sequences.indices.contains(selected) ? sequences[selected] : nil }
     var isRunning: Bool { progress != nil }
+    var totalFrames: Int { sequences.reduce(0) { $0 + $1.frames.count } }
 
-    func load(_ url: URL) {
-        do {
-            sequences = try FrameSequence.find(at: url)
-            selected = 0
-            status = nil; lastOutput = nil; errorMessage = nil
-        } catch {
-            errorMessage = error.localizedDescription
+    /// Loads what was dropped or opened. Several items make a batch; an item without frames is skipped
+    /// and reported, the others still load.
+    func load(_ urls: [URL]) {
+        guard !isRunning, !urls.isEmpty else { return }
+        var found: [FrameSequence] = [], problems: [String] = []
+        for url in urls {
+            do { found += try FrameSequence.find(at: url) } catch { problems.append(error.localizedDescription) }
         }
+        status = nil; lastOutputs = []
+        errorMessage = problems.isEmpty ? nil : problems.joined(separator: "\n")
+        guard !found.isEmpty else { return }
+        sequences = found
+        selected = 0
+        isBatch = urls.count > 1
     }
 
     func chooseAndExport() {
-        guard let sequence, !isRunning else { return }
-        guard let output = askDestination(for: sequence) else { return }
+        guard !isRunning else { return }
+        let batch: [(FrameSequence, URL)]
+        if isBatch {
+            guard let outputs = askBatchDestination() else { return }
+            batch = Array(zip(sequences, outputs))
+        } else {
+            guard let sequence, let output = askDestination(for: sequence) else { return }
+            batch = [(sequence, output)]
+        }
         var options = ExportOptions(format: format, fps: fps)
         options.background = rgb(background)
 
-        progress = ExportProgress(done: 0, total: sequence.frames.count, elapsed: 0)
-        status = nil; lastOutput = nil; errorMessage = nil
+        let total = batch.reduce(0) { $0 + $1.0.frames.count }
+        progress = ExportProgress(done: 0, total: total, elapsed: 0)
+        batchPosition = isBatch ? (1, batch.count) : nil
+        status = nil; lastOutputs = []; errorMessage = nil
         let ffmpeg = self.ffmpeg
         job = Task.detached(priority: .userInitiated) { [weak self] in
             let start = Date()
-            let result = Result {
-                try SequenceExporter(sequence: sequence, options: options, output: output, ffmpeg: ffmpeg).run(
-                    progress: { p in Task { @MainActor in if self?.isRunning == true { self?.progress = p } } },
-                    isCancelled: { Task.isCancelled })
+            var framesBefore = 0
+            var exported: [URL] = [], failures: [String] = [], cancelled = false
+            for (index, (sequence, output)) in batch.enumerated() {
+                if Task.isCancelled { cancelled = true; break }
+                await self?.setBatchPosition(index + 1, of: batch.count)
+                let offset = framesBefore
+                do {
+                    // Progress covers the whole batch, so the bar, fps and time left never jump back.
+                    try SequenceExporter(sequence: sequence, options: options, output: output, ffmpeg: ffmpeg).run(
+                        progress: { p in
+                            let overall = ExportProgress(done: offset + p.done, total: total,
+                                                         elapsed: Date().timeIntervalSince(start))
+                            Task { @MainActor in if self?.isRunning == true { self?.progress = overall } }
+                        },
+                        isCancelled: { Task.isCancelled })
+                    exported.append(output)
+                } catch ExportError.cancelled {
+                    cancelled = true
+                    break
+                } catch {
+                    failures.append(batch.count > 1 ? "\(sequence.name): \(error.localizedDescription)" : error.localizedDescription)
+                }
+                framesBefore += sequence.frames.count
             }
-            await self?.finish(result, output: output, seconds: Date().timeIntervalSince(start))
+            await self?.finish(exported: exported, failures: failures, count: batch.count, cancelled: cancelled,
+                               seconds: Date().timeIntervalSince(start))
         }
     }
 
     func cancel() { job?.cancel() }
 
-    private func finish(_ result: Result<Void, Error>, output: URL, seconds: TimeInterval) {
-        progress = nil; job = nil
-        switch result {
-        case .success:
-            lastOutput = output
-            status = String(format: "Exported %@ in %.1f s.", output.lastPathComponent, seconds)
-            NSApp.requestUserAttention(.informationalRequest)
-        case .failure(let error):
-            if (error as? ExportError) != .cancelled { errorMessage = error.localizedDescription }
-        }
+    private func setBatchPosition(_ current: Int, of count: Int) {
+        if count > 1 { batchPosition = (current, count) }
     }
 
-    /// "Rendering frame 312 / 750 · 85 fps · 3 s left"
+    private func finish(exported: [URL], failures: [String], count: Int, cancelled: Bool, seconds: TimeInterval) {
+        progress = nil; batchPosition = nil; job = nil
+        lastOutputs = exported
+        errorMessage = failures.isEmpty ? nil : failures.joined(separator: "\n")
+        let time = String(format: "%.1f s", seconds)
+        if count == 1 {
+            if let output = exported.first { status = "Exported \(output.lastPathComponent) in \(time)." }
+        } else if cancelled {
+            status = "Cancelled after \(exported.count) of \(count) sequences."
+        } else {
+            status = exported.count == count ? "Exported \(count) sequences in \(time)."
+                                             : "Exported \(exported.count) of \(count) sequences in \(time)."
+        }
+        if !cancelled, !exported.isEmpty { NSApp.requestUserAttention(.informationalRequest) }
+    }
+
+    /// "Sequence 2 / 5 · Rendering frame 312 / 750 · 85 fps · 3 s left" (frames counted over the whole batch)
     var progressLabel: String {
         guard let p = progress else { return "" }
         var parts = ["Rendering frame \(p.done) / \(p.total)"]
+        if let b = batchPosition { parts.insert("Sequence \(b.current) / \(b.count)", at: 0) }
         if let fps = p.framesPerSecond { parts.append(String(format: "%.0f fps", fps)) }
         if let left = p.remaining { parts.append(left < 1 ? "almost done" : ExportProgress.formatDuration(left) + " left") }
         return parts.joined(separator: " · ")
     }
 
     func revealOutput() {
-        if let lastOutput { NSWorkspace.shared.activateFileViewerSelecting([lastOutput]) }
+        if !lastOutputs.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(lastOutputs) }
+    }
+
+    /// One folder for the whole batch. Outputs that already exist are replaced only after asking.
+    private func askBatchDestination() -> [URL]? {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.directoryURL = sequences.first?.directory.deletingLastPathComponent()
+        panel.prompt = "Export All Here"
+        panel.message = format == .png
+            ? "Each of the \(sequences.count) sequences goes into its own NAME_png folder."
+            : "Each of the \(sequences.count) sequences becomes its own .\(format.fileExtension ?? "") file."
+        guard panel.runModal() == .OK, let folder = panel.url else { return nil }
+        let outputs = format.batchOutputs(for: sequences, in: folder)
+        let existing = outputs.filter { FileManager.default.fileExists(atPath: $0.path) }
+        if !existing.isEmpty {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = existing.count == 1 ? "\u{201C}\(existing[0].lastPathComponent)\u{201D} already exists."
+                                                    : "\(existing.count) of the exports already exist in this folder."
+            alert.informativeText = "Replacing them overwrites their contents."
+            alert.addButton(withTitle: "Replace")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        }
+        return outputs
     }
 
     private func askDestination(for sequence: FrameSequence) -> URL? {
@@ -141,27 +218,47 @@ struct MainView: View {
             .background(RoundedRectangle(cornerRadius: 10).fill(dropTargeted ? Color.accentColor.opacity(0.08) : .clear))
             .overlay(
                 VStack(spacing: 4) {
-                    Text(model.sequence == nil ? "Drop a .vbn sequence folder or frame" : "Drop another sequence")
+                    Text(model.sequence == nil ? "Drop .vbn sequence folders or a frame" : "Drop other sequences")
                         .font(.headline)
-                    Text("Exports PNG frames, MP4 or WebM with alpha")
+                    Text("Several folders export one after the other, with the same settings")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             )
             .frame(height: model.sequence == nil ? 140 : 70)
             .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
-                guard let provider = providers.first else { return false }
-                _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                    if let url { Task { @MainActor in model.load(url) } }
-                }
+                guard !providers.isEmpty, !model.isRunning else { return false }
+                Task { @MainActor in model.load(await Self.urls(from: providers)) }
                 return true
             }
             .animation(.easeOut(duration: 0.15), value: model.sequence == nil)
     }
 
+    /// The dropped file URLs, in drop order.
+    private static func urls(from providers: [NSItemProvider]) async -> [URL] {
+        var urls: [URL] = []
+        for provider in providers {
+            let url: URL? = await withCheckedContinuation { done in
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in done.resume(returning: url) }
+            }
+            if let url { urls.append(url) }
+        }
+        return urls
+    }
+
     @ViewBuilder
     private func settings(for seq: FrameSequence) -> some View {
         Form {
-            if model.sequences.count > 1 {
+            if model.isBatch {
+                LabeledContent("Sequences") {
+                    Text("\(model.sequences.count): " + model.sequences.map(\.name).joined(separator: ", "))
+                        .lineLimit(2).truncationMode(.tail)
+                        .help(model.sequences.map { "\($0.name) (\($0.frames.count))" }.joined(separator: "\n"))
+                }
+                LabeledContent("Frames") {
+                    let missing = model.sequences.reduce(0) { $0 + $1.missingNumbers.count }
+                    Text("\(model.totalFrames)" + (missing > 0 ? " (\(missing) missing, skipped)" : ""))
+                }
+            } else if model.sequences.count > 1 {
                 Picker("Sequence", selection: $model.selected) {
                     ForEach(model.sequences.indices, id: \.self) { i in
                         Text("\(model.sequences[i].name) (\(model.sequences[i].frames.count))").tag(i)
@@ -170,9 +267,11 @@ struct MainView: View {
             } else {
                 LabeledContent("Sequence", value: seq.name)
             }
-            LabeledContent("Frames") {
-                let missing = seq.missingNumbers.count
-                Text("\(seq.frames.count)" + (missing > 0 ? " (\(missing) missing, skipped)" : ""))
+            if !model.isBatch {
+                LabeledContent("Frames") {
+                    let missing = seq.missingNumbers.count
+                    Text("\(seq.frames.count)" + (missing > 0 ? " (\(missing) missing, skipped)" : ""))
+                }
             }
             Picker("Format", selection: $model.format) {
                 ForEach(ExportFormat.allCases) { f in
@@ -215,10 +314,10 @@ struct MainView: View {
             } else {
                 if let status = model.status {
                     Text(status).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                    if model.lastOutput != nil { Button("Show in Finder", action: model.revealOutput).controlSize(.small) }
+                    if !model.lastOutputs.isEmpty { Button("Show in Finder", action: model.revealOutput).controlSize(.small) }
                 }
                 Spacer()
-                Button("Export\u{2026}", action: model.chooseAndExport)
+                Button(model.isBatch ? "Export All\u{2026}" : "Export\u{2026}", action: model.chooseAndExport)
                     .keyboardShortcut(.defaultAction)
                     .disabled(model.format.needsFFmpeg && model.ffmpeg == nil)
             }

@@ -53,16 +53,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    /// Files open in Preview (double-click); a folder dropped on the Dock icon opens the sequence exporter.
+    /// Files open in Preview (double-click); folders dropped on the Dock icon open the sequence exporter
+    /// (several folders: one batch).
     func application(_ application: NSApplication, open urls: [URL]) {
         openedFiles = true
-        for url in urls {
-            if url.hasDirectoryPath { showExporter(for: url) } else { openInPreview(url) }
-        }
+        let folders = urls.filter(\.hasDirectoryPath)
+        urls.filter { !$0.hasDirectoryPath }.forEach(openInPreview)
+        if !folders.isEmpty { showExporter(for: folders) }
     }
 
-    func showExporter(for url: URL) {
-        exportModel.load(url)
+    func showExporter(for urls: [URL]) {
+        exportModel.load(urls)
         showWindow()
     }
 
@@ -132,11 +133,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func exportSequence(_ sender: Any?) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = true
         panel.allowedContentTypes = [.vbn, .folder]
-        panel.message = "Choose a folder of .vbn frames, or any frame of the sequence."
+        panel.message = "Choose folders of .vbn frames (several export one after the other), or any frame of a sequence."
         panel.prompt = "Choose"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        showExporter(for: url)
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+        showExporter(for: panel.urls)
     }
 
     @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {

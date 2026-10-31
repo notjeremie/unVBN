@@ -12,7 +12,8 @@ or WebM (VP9 + alpha). A folder holding several sequences converts each one.
   -f, --format      png (default; a folder of PNGs), mp4, webm
   --fps             frames per second (default 50)
   -o, --output      output file (or folder for png). Default: next to the sequence folder,
-                    NAME.mp4 / NAME.webm / NAME_png/. Only with a single sequence.
+                    NAME.mp4 / NAME.webm / NAME_png/ ("NAME (FOLDER)" when several sequences
+                    share a name). Only with a single sequence.
   --background      MP4 only (no alpha): colour behind transparent pixels (default #000000)
   --crf             WebM quality, 0 (best) to 63 (default 30)
 """
@@ -122,9 +123,9 @@ if infoOnly {
 
 if outputPath != nil, sequences.count > 1 { fail("-o works with a single sequence; \(sequences.count) were found") }
 
+let outputs = outputPath.map { [URL(fileURLWithPath: $0)] } ?? options.format.defaultOutputs(for: sequences)
 var failures = 0
-for seq in sequences {
-    let out = outputPath.map { URL(fileURLWithPath: $0) } ?? options.format.defaultOutput(for: seq)
+for (seq, out) in zip(sequences, outputs) {
     let missing = seq.missingNumbers
     if !missing.isEmpty {
         eprint("unvbn: warning: \(seq.name) has \(missing.count) missing frame number(s); they are skipped")

@@ -61,6 +61,11 @@ An animation is a folder of numbered frames, `NAME_00000.vbn` … `NAME_00749.vb
 A progress bar shows the frame, speed and time left, also on the Dock icon. A folder holding several
 animations offers a picker.
 
+**Several folders at once**: drop (or choose) several folders together. They are exported one after the
+other with the same settings, into one folder you pick (*Export All…*). Each gets its own file; two animations
+with the same name become `NAME (FOLDER).webm`. If some exports already exist there, unVBN asks before
+replacing them. A folder that fails is reported and the others still export.
+
 **On the command line**: the `unvbn` tool is inside the app. Link it once:
 
 ```sh
@@ -69,6 +74,7 @@ unvbn info LOGO_FOLDER/                       # name, frame count, size, missing
 unvbn LOGO_FOLDER/ -f webm                    # -> LOGO.webm next to the folder
 unvbn LOGO_00000.vbn -f mp4 --fps 25 -o logo.mp4
 unvbn ALL_LOGOS/ -f png                       # every animation in the folder -> NAME_png/ folders
+unvbn LOGO_A/ LOGO_B/ LOGO_C/ -f webm         # several folders, one after the other
 unvbn LOGO_FOLDER/ -f mp4 --background '#FFFFFF'
 unvbn LOGO_FOLDER/ -f webm --crf 20           # WebM quality: 0 (best) … 63, default 30
 ```

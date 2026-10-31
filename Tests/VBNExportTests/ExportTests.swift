@@ -206,6 +206,21 @@ final class ExportTests: XCTestCase {
                                                   output: dir.appendingPathComponent("p")).run())
     }
 
+    func testBatchOutputsNeverCollide() {
+        func seq(_ name: String, _ folder: String) -> FrameSequence {
+            FrameSequence(name: name, directory: URL(fileURLWithPath: "/in/\(folder)"), frames: [])
+        }
+        let sequences = [seq("LOGO", "a"), seq("Intro", "b"), seq("logo", "c"), seq("LOGO", "a")]
+        let out = URL(fileURLWithPath: "/out")
+        XCTAssertEqual(ExportFormat.webm.batchOutputs(for: sequences, in: out).map(\.lastPathComponent),
+                       ["LOGO (a).webm", "Intro.webm", "logo (c).webm", "LOGO (a) 2.webm"])
+        XCTAssertEqual(ExportFormat.png.batchOutputs(for: [seq("Intro", "b")], in: out).map(\.path), ["/out/Intro_png"])
+        // Next to each folder: only sequences that end up in the same place are told apart.
+        let elsewhere = FrameSequence(name: "LOGO", directory: URL(fileURLWithPath: "/other/d"), frames: [])
+        XCTAssertEqual(ExportFormat.mp4.defaultOutputs(for: [seq("LOGO", "a"), elsewhere, seq("LOGO", "b")]).map(\.path),
+                       ["/in/LOGO (a).mp4", "/other/LOGO.mp4", "/in/LOGO (b).mp4"])
+    }
+
     func testOptionsHelpers() {
         XCTAssertEqual(RGBColor(hex: "#FF8000"), RGBColor(r: 255, g: 128, b: 0))
         XCTAssertEqual(RGBColor(hex: "00ff00"), RGBColor(r: 0, g: 255, b: 0))

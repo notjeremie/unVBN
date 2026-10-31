@@ -31,9 +31,39 @@ public enum ExportFormat: String, CaseIterable, Identifiable {
 
     /// Default output next to the sequence folder: `NAME.mp4`, or the folder `NAME_png`.
     public func defaultOutput(for sequence: FrameSequence) -> URL {
-        let parent = sequence.directory.deletingLastPathComponent()
-        if let ext = fileExtension { return parent.appendingPathComponent(sequence.name).appendingPathExtension(ext) }
-        return parent.appendingPathComponent(sequence.name + "_png", isDirectory: true)
+        output(named: sequence.name, in: sequence.directory.deletingLastPathComponent())
+    }
+
+    /// Outputs for exporting several sequences into one folder, in the same order. Each is named after
+    /// its sequence; a name shared by several sequences gets its folder added, `NAME (FOLDER)`, then
+    /// ` 2`, ` 3`… if that is still taken, so no export overwrites another.
+    public func batchOutputs(for sequences: [FrameSequence], in folder: URL) -> [URL] {
+        var counts: [String: Int] = [:]
+        for seq in sequences { counts[seq.name.lowercased(), default: 0] += 1 }
+        var used = Set<String>()
+        return sequences.map { seq in
+            let base = counts[seq.name.lowercased()]! > 1 ? "\(seq.name) (\(seq.directory.lastPathComponent))" : seq.name
+            var name = base, n = 2
+            while !used.insert(name.lowercased()).inserted { name = "\(base) \(n)"; n += 1 }
+            return output(named: name, in: folder)
+        }
+    }
+
+    /// Default outputs for several sequences: each next to its own folder, as `defaultOutput`, with
+    /// shared names told apart as in `batchOutputs`.
+    public func defaultOutputs(for sequences: [FrameSequence]) -> [URL] {
+        var outputs = [URL?](repeating: nil, count: sequences.count)
+        let byParent = Dictionary(grouping: sequences.indices) { sequences[$0].directory.deletingLastPathComponent().standardizedFileURL }
+        for (parent, indices) in byParent {
+            for (i, url) in zip(indices, batchOutputs(for: indices.map { sequences[$0] }, in: parent)) { outputs[i] = url }
+        }
+        return outputs.map { $0! }
+    }
+
+    /// `folder/NAME.ext`, or the folder `folder/NAME_png` for PNG.
+    private func output(named name: String, in folder: URL) -> URL {
+        if let ext = fileExtension { return folder.appendingPathComponent(name).appendingPathExtension(ext) }
+        return folder.appendingPathComponent(name + "_png", isDirectory: true)
     }
 }
 
