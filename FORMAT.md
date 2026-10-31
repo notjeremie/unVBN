@@ -47,8 +47,8 @@ in the playout system (the scene, a clip or the audio chain), not with the frame
 
 ## Verified
 
-`ATHLETE_JOURNEY_STRIPE_LOGO` (436×180, QLZ+BGRA), `LOGO_BUG_FLAG` (132×132, DXT5),
-`SHAVUOT_LOGO_BUG` (132×132, QLZ+DXT5), Kidum `NEW_BGs_FOR_Viz_BRIGHT` (884×144, QLZ+DXT5) — all
+a 436×180 stripe logo (QLZ+BGRA), a 132×132 logo bug (DXT5), another 132×132 logo bug (QLZ+DXT5)
+and an 884×144 background (QLZ+DXT5) — all
 decode to correct, upright images with alpha.
 
 Reference decoder: `reference/vbn.py` (QuickLZ L3 + header) and `reference/dxt.py` (BC3).

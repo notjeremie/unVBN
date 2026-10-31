@@ -29,10 +29,12 @@ MINVER=14.0
 JOBS=10
 
 # Bump the trailing number if the flags below change.
-STAMP="ffmpeg-${FFMPEG_VERSION} libvpx-${VPX_VERSION} min${MINVER} cfg5"
+STAMP="ffmpeg-${FFMPEG_VERSION} libvpx-${VPX_VERSION} min${MINVER} cfg6"
 
 OUT="$ROOT/build/ffmpeg"
-WORK="$ROOT/build/ffmpeg-src"
+# Build under a fixed neutral path: ffmpeg's configure line (shown by `ffmpeg -version`) and libvpx's
+# prefix are embedded in the binary, and must not record the builder's home folder.
+WORK="/tmp/unvbn-ffmpeg-build"
 
 if [ -x "$OUT/ffmpeg" ] && [ "$(cat "$OUT/stamp" 2>/dev/null || true)" = "$STAMP" ]; then
   echo "build/ffmpeg/ffmpeg is up to date ($STAMP)"
