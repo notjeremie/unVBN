@@ -17,6 +17,49 @@ WebM (VP9 + alpha) or MOV (ProRes 4444 + alpha). A folder holding several sequen
   --crf             WebM quality, 0 (best) to 63 (default 30)
 """
 
+/// Rendering progress on stderr: a redrawn bar on a terminal, a line every 10 % when piped.
+///   [██████████████░░░░░░░░░░]  58%  435/750  92 fps  ETA 3s
+final class ProgressBar {
+    let total: Int
+    private let start = Date()
+    private let tty = isatty(STDERR_FILENO) == 1
+    private var lastDrawn = -1
+
+    init(total: Int) { self.total = max(total, 1) }
+
+    func update(_ done: Int) {
+        let percent = done * 100 / total
+        if tty {
+            // Redraw at most once per percent (and on the last frame).
+            guard percent != lastDrawn || done == total else { return }
+        } else {
+            guard percent / 10 != lastDrawn / 10 || done == total else { return }
+        }
+        lastDrawn = percent
+        let width = 24
+        let filled = done * width / total
+        let elapsed = Date().timeIntervalSince(start)
+        var line = "[" + String(repeating: "\u{2588}", count: filled) + String(repeating: "\u{2591}", count: width - filled) + "]"
+        line += String(format: " %3d%%  %d/%d", percent, done, total)
+        if done > 0, elapsed > 0.3 {
+            let rate = Double(done) / elapsed
+            line += String(format: "  %.0f fps  ETA %@", rate, Self.duration(Double(total - done) / rate))
+        }
+        write(tty ? "\r  " + line + "\u{1B}[K" : "  " + line + "\n")
+    }
+
+    func finish(seconds: Double) {
+        write((tty ? "\r\u{1B}[K" : "") + String(format: "  done: %d frames in %.1f s\n", total, seconds))
+    }
+
+    static func duration(_ s: Double) -> String {
+        let n = Int(s.rounded(.up))
+        return n < 60 ? "\(n)s" : "\(n / 60)m\(String(format: "%02d", n % 60))s"
+    }
+
+    private func write(_ s: String) { FileHandle.standardError.write(Data(s.utf8)) }
+}
+
 func fail(_ message: String, code: Int32 = 1) -> Never {
     FileHandle.standardError.write(Data("unvbn: \(message)\n".utf8))
     exit(code)
@@ -93,15 +136,10 @@ for seq in sequences {
     }
     FileHandle.standardError.write(Data("\(seq.name): \(seq.frames.count) frames -> \(out.path)\n".utf8))
     let start = Date()
-    var lastPercent = -1
+    let bar = ProgressBar(total: seq.frames.count)
     do {
-        try SequenceExporter(sequence: seq, options: options, output: out).run(progress: { done, total in
-            let percent = done * 100 / total
-            guard percent != lastPercent else { return }
-            lastPercent = percent
-            FileHandle.standardError.write(Data("\r  \(percent)% (\(done)/\(total))".utf8))
-        })
-        FileHandle.standardError.write(Data(String(format: "\r  done in %.1f s          \n", Date().timeIntervalSince(start)).utf8))
+        try SequenceExporter(sequence: seq, options: options, output: out).run(progress: { done, _ in bar.update(done) })
+        bar.finish(seconds: Date().timeIntervalSince(start))
     } catch {
         FileHandle.standardError.write(Data("\n".utf8))
         FileHandle.standardError.write(Data("unvbn: \(seq.name): \(error.localizedDescription)\n".utf8))

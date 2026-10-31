@@ -143,6 +143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 400),
                              styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
             w.title = "unVBN"
+            w.identifier = NSUserInterfaceItemIdentifier("main")
             w.isReleasedWhenClosed = false
             w.contentView = NSHostingView(rootView: MainView(
                 model: exportModel,

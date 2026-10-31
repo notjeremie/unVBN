@@ -12,6 +12,9 @@ final class ExportModel: ObservableObject {
     @Published var fps: Double = 50
     @Published var background: Color = .black
     @Published private(set) var progress: Double?
+    @Published private(set) var framesDone = 0
+    @Published private(set) var framesTotal = 0
+    private var renderStart = Date()
     @Published private(set) var status: String?
     @Published private(set) var lastOutput: URL?
     @Published var errorMessage: String?
@@ -40,23 +43,28 @@ final class ExportModel: ObservableObject {
 
         let flag = CancelFlag()
         cancelFlag = flag
-        progress = 0; status = "Exporting \(sequence.frames.count) frames…"; lastOutput = nil; errorMessage = nil
+        progress = 0; framesDone = 0; framesTotal = sequence.frames.count; renderStart = Date()
+        status = nil; lastOutput = nil; errorMessage = nil
+        DockProgress.shared.update(0)
         let ffmpeg = self.ffmpeg
         Task.detached(priority: .userInitiated) {
             let start = Date()
             do {
                 try SequenceExporter(sequence: sequence, options: options, output: output, ffmpeg: ffmpeg).run(
-                    progress: { done, total in Task { @MainActor in self.progress = Double(done) / Double(total) } },
+                    progress: { done, total in Task { @MainActor in self.report(done, of: total) } },
                     isCancelled: { flag.isSet })
                 let seconds = Date().timeIntervalSince(start)
                 await MainActor.run {
                     self.progress = nil
+                    DockProgress.shared.update(nil)
+                    NSApp.requestUserAttention(.informationalRequest)
                     self.lastOutput = output
                     self.status = String(format: "Exported %@ in %.1f s.", output.lastPathComponent, seconds)
                 }
             } catch {
                 await MainActor.run {
                     self.progress = nil
+                    DockProgress.shared.update(nil)
                     self.status = nil
                     if (error as? ExportError) != .cancelled { self.errorMessage = error.localizedDescription }
                 }
@@ -65,6 +73,31 @@ final class ExportModel: ObservableObject {
     }
 
     func cancel() { cancelFlag.set() }
+
+    private func report(_ done: Int, of total: Int) {
+        guard progress != nil else { return }   // a late update after the job ended
+        framesDone = done; framesTotal = total
+        progress = Double(done) / Double(max(total, 1))
+        DockProgress.shared.update(progress)
+    }
+
+    /// "Rendering frame 312 / 750 · 85 fps · 3 s left"
+    var progressLabel: String {
+        var parts = ["Rendering frame \(framesDone) / \(framesTotal)"]
+        let elapsed = Date().timeIntervalSince(renderStart)
+        if framesDone > 0, elapsed > 0.3 {
+            let rate = Double(framesDone) / elapsed
+            parts.append(String(format: "%.0f fps", rate))
+            let left = Double(framesTotal - framesDone) / rate
+            parts.append(left < 1 ? "almost done" : Self.duration(left) + " left")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    static func duration(_ seconds: Double) -> String {
+        let s = Int(seconds.rounded(.up))
+        return s < 60 ? "\(s) s" : "\(s / 60) min \(s % 60) s"
+    }
 
     func revealOutput() {
         if let lastOutput { NSWorkspace.shared.activateFileViewerSelecting([lastOutput]) }
@@ -197,7 +230,18 @@ struct MainView: View {
 
         HStack(spacing: 10) {
             if let progress = model.progress {
-                ProgressView(value: progress).frame(maxWidth: .infinity)
+                VStack(alignment: .leading, spacing: 4) {
+                    ProgressView(value: progress)
+                        .progressViewStyle(.linear)
+                        .animation(.linear(duration: 0.1), value: progress)
+                    HStack {
+                        Text(model.progressLabel).monospacedDigit()
+                        Spacer()
+                        Text("\(Int(progress * 100)) %").monospacedDigit()
+                    }
+                    .font(.caption).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
                 Button("Cancel", action: model.cancel)
             } else {
                 if let status = model.status {
@@ -210,5 +254,44 @@ struct MainView: View {
                     .disabled(model.format.needsFFmpeg && model.ffmpeg == nil)
             }
         }
+    }
+}
+
+/// Progress bar drawn over the Dock icon while a sequence renders.
+@MainActor
+final class DockProgress {
+    static let shared = DockProgress()
+    private var bar: NSProgressIndicator?
+    private var lastPercent = -1
+    private var mainWindow: NSWindow? { NSApp.windows.first { $0.identifier?.rawValue == "main" } }
+
+    func update(_ fraction: Double?) {
+        let tile = NSApp.dockTile
+        guard let fraction else {
+            mainWindow?.title = "unVBN"
+            tile.contentView = nil; bar = nil; lastPercent = -1
+            tile.display()
+            return
+        }
+        if bar == nil {
+            let size = tile.size
+            let icon = NSImageView(frame: NSRect(origin: .zero, size: size))
+            icon.image = NSApp.applicationIconImage
+            let bar = NSProgressIndicator(frame: NSRect(x: size.width * 0.12, y: size.height * 0.1,
+                                                         width: size.width * 0.76, height: size.height * 0.12))
+            bar.style = .bar
+            bar.isIndeterminate = false
+            bar.minValue = 0; bar.maxValue = 1
+            icon.addSubview(bar)
+            tile.contentView = icon
+            self.bar = bar
+        }
+        // Redraw the tile only when the visible percentage changes.
+        let percent = Int(fraction * 100)
+        guard percent != lastPercent else { return }
+        lastPercent = percent
+        mainWindow?.title = "unVBN \u{2014} Rendering \(percent) %"
+        bar?.doubleValue = fraction
+        tile.display()
     }
 }
