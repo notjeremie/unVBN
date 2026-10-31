@@ -1,6 +1,6 @@
 <p align="center"><img src="docs/icon.png" width="160" alt="unVBN icon"></p>
 
-# unVBN: Vizrt `.vbn` images on macOS
+# unVBN: Vizrt `.vbn` images on macOS and Windows
 
 A small macOS app that makes Vizrt Viz Artist / Viz Engine `.vbn` image files viewable on a Mac:
 
@@ -12,6 +12,8 @@ A small macOS app that makes Vizrt Viz Artist / Viz Engine `.vbn` image files vi
   From the app window or the `unvbn` command-line tool.
 
 The format itself is documented in [`FORMAT.md`](FORMAT.md). The Python reference decoder is in `reference/`.
+
+**Windows**: a small codec lets Windows itself open `.vbn` files, with no conversion. See [Windows](#windows).
 
 ## Install
 
@@ -138,6 +140,42 @@ It builds in `$TMPDIR`, not in the repo: iCloud Drive tags files under `~/Docume
 
 The app icon is drawn in code: `scripts/make-icon.sh` runs `scripts/make-icon.swift` and rebuilds
 `App/Assets.xcassets/AppIcon.appiconset` and `docs/icon.png`.
+
+## Windows
+
+`windows/` holds a **WIC codec** (Windows Imaging Component, the system's image-decoding layer) for `.vbn`.
+Once installed, Windows reads `.vbn` like a built-in image format: Explorer draws thumbnails, and apps that
+load images through WIC can open them. It only opens files: no conversion, no export.
+
+**Install**: download `unVBN-windows-<version>-x64.msi` (or `-arm64.msi` on an ARM PC such as a Surface Pro X
+or a Snapdragon laptop) from [Releases](https://github.com/notjeremie/unVBN/releases) and run it. It needs
+administrator rights and installs to `C:\Program Files\unVBN\`. Uninstall from *Settings > Apps*. If thumbnails
+don't appear right away, sign out and back in (Explorer caches thumbnails). The MSI is not code-signed, so
+Windows SmartScreen shows a warning first: *More info > Run anyway*.
+
+If another program (such as a Vizrt install) already owns the `.vbn` file type, the codec does not take over
+its default app or thumbnail handler; it only adds itself to WIC and *Open with*.
+
+How it is built:
+
+| Part | What |
+|---|---|
+| `windows/src/vbn_decode.*` | Portable C++17 port of `VBNCore`, pixel-identical to it. QuickLZ output is capped at the size the header requires, so a hostile file cannot make Explorer allocate gigabytes. |
+| `windows/src/wic_codec.cpp` | The COM DLL: `IWICBitmapDecoder` + frame (32bpp BGRA, straight alpha), magic-number pattern `1E F1 0D 90`, and `DllRegisterServer` / `DllUnregisterServer`, the single source of truth for the registry entries. |
+| `windows/installer/unVBN.wxs` | WiX v4 per-machine MSI that installs the DLL and calls its self-registration. |
+| `windows/test/` | `test_decode` (portable decoder tests, also run on macOS) and `wic_test` (decodes through WIC itself, so it only passes when the codec is registered). |
+
+CI (`.github/workflows/windows.yml`) builds x64 and ARM64 on GitHub's Windows runners, runs both test
+programs, registers the codec with `regsvr32`, then installs and uninstalls the MSI and checks WIC before and
+after. To build by hand on Windows (Visual Studio 2022, CMake):
+
+```bat
+cmake -S windows -B build -A x64 -DUNVBN_VERSION=0.3.0
+cmake --build build --config Release
+regsvr32 build\Release\unvbn_wic.dll        &:: as administrator; regsvr32 /u to remove
+```
+
+The portable decoder test also runs on a Mac: `clang++ -std=c++17 windows/src/vbn_decode.cpp windows/test/test_decode.cpp -o test_decode && ./test_decode`.
 
 ## License
 
