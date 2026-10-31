@@ -15,10 +15,10 @@
             buildForAnalyzing = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "9479A3103DC804896E27EC10"
+               BlueprintIdentifier = "4209FBE1F12225D75EE10F63"
                BuildableName = "VBNCoreTests.xctest"
                BlueprintName = "VBNCoreTests"
-               ReferencedContainer = "container:iVBN.xcodeproj">
+               ReferencedContainer = "container:unVBN.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
          <BuildActionEntry
@@ -29,10 +29,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "EB61951D9B6F88783FA57A18"
-               BuildableName = "iVBN.app"
-               BlueprintName = "iVBN"
-               ReferencedContainer = "container:iVBN.xcodeproj">
+               BlueprintIdentifier = "DD651CD2287C0EED7971C0FD"
+               BuildableName = "unVBN.app"
+               BlueprintName = "unVBN"
+               ReferencedContainer = "container:unVBN.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -46,10 +46,10 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "EB61951D9B6F88783FA57A18"
-            BuildableName = "iVBN.app"
-            BlueprintName = "iVBN"
-            ReferencedContainer = "container:iVBN.xcodeproj">
+            BlueprintIdentifier = "DD651CD2287C0EED7971C0FD"
+            BuildableName = "unVBN.app"
+            BlueprintName = "unVBN"
+            ReferencedContainer = "container:unVBN.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
@@ -58,10 +58,10 @@
             parallelizable = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "9479A3103DC804896E27EC10"
+               BlueprintIdentifier = "4209FBE1F12225D75EE10F63"
                BuildableName = "VBNCoreTests.xctest"
                BlueprintName = "VBNCoreTests"
-               ReferencedContainer = "container:iVBN.xcodeproj">
+               ReferencedContainer = "container:unVBN.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -82,10 +82,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "EB61951D9B6F88783FA57A18"
-            BuildableName = "iVBN.app"
-            BlueprintName = "iVBN"
-            ReferencedContainer = "container:iVBN.xcodeproj">
+            BlueprintIdentifier = "DD651CD2287C0EED7971C0FD"
+            BuildableName = "unVBN.app"
+            BlueprintName = "unVBN"
+            ReferencedContainer = "container:unVBN.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -99,10 +99,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "EB61951D9B6F88783FA57A18"
-            BuildableName = "iVBN.app"
-            BlueprintName = "iVBN"
-            ReferencedContainer = "container:iVBN.xcodeproj">
+            BlueprintIdentifier = "DD651CD2287C0EED7971C0FD"
+            BuildableName = "unVBN.app"
+            BlueprintName = "unVBN"
+            ReferencedContainer = "container:unVBN.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

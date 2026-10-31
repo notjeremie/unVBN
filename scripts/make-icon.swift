@@ -1,4 +1,4 @@
-// Draws the iVBN app icon ("broadcast badge") and writes a 1024×1024 PNG.
+// Draws the unVBN app icon ("broadcast badge") and writes a 1024×1024 PNG.
 // Usage: swift scripts/make-icon.swift <out.png>   (scripts/make-icon.sh builds the whole icon set)
 import AppKit
 

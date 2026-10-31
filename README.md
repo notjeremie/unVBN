@@ -1,6 +1,6 @@
-<p align="center"><img src="docs/icon.png" width="160" alt="iVBN icon"></p>
+<p align="center"><img src="docs/icon.png" width="160" alt="unVBN icon"></p>
 
-# iVBN: Vizrt `.vbn` images on macOS
+# unVBN: Vizrt `.vbn` images on macOS
 
 A small macOS app that makes Vizrt Viz Artist / Viz Engine `.vbn` image files viewable on a Mac:
 
@@ -14,22 +14,22 @@ The format itself is documented in [`FORMAT.md`](FORMAT.md). The Python referenc
 ## Install
 
 ```sh
-scripts/install.sh          # builds Release, copies iVBN.app to ~/Applications, registers it
+scripts/install.sh          # builds Release, copies unVBN.app to ~/Applications, registers it
 ```
 
-To do it by hand, copy `iVBN.app` to `~/Applications/`, launch it once, then run `qlmanage -r`. Launching
+To do it by hand, copy `unVBN.app` to `~/Applications/`, launch it once, then run `qlmanage -r`. Launching
 the app registers the `.vbn` type and the two Quick Look extensions (`pluginkit -m -v | grep -i vbn`
-should list `com.notjeremie.ivbn.preview` and `com.notjeremie.ivbn.thumbnail`).
+should list `com.notjeremie.unvbn.preview` and `com.notjeremie.unvbn.thumbnail`).
 
 ## How it works
 
 Apple has no public ImageIO plug-in API, so no app can teach Preview itself to read a new image format.
-iVBN works around this in two ways:
+unVBN works around this in two ways:
 
-- **Quick Look**: two app extensions. `iVBNPreview` is a data-based preview (`QLPreviewProvider`) that
-  returns a PNG. `iVBNThumbnail` (`QLThumbnailProvider`) draws the image aspect-fit.
+- **Quick Look**: two app extensions. `unVBNPreview` is a data-based preview (`QLPreviewProvider`) that
+  returns a PNG. `unVBNThumbnail` (`QLThumbnailProvider`) draws the image aspect-fit.
 - **Double-click**: the app is registered as the *Viewer* for `com.vizrt.vbn`. It decodes the file,
-  writes `$TMPDIR/iVBN/<name>.png` and opens that file in Preview (`com.apple.Preview`). When the app
+  writes `$TMPDIR/unVBN/<name>.png` and opens that file in Preview (`com.apple.Preview`). When the app
   is launched only to open files, it shows no window. When it is launched on its own, a small window
   with *Open .vbn…* and *Export PNG…* appears.
 
@@ -42,9 +42,9 @@ declaration gives way to Vizrt's own if one is ever installed.
 | Target | What |
 |---|---|
 | `VBNCore` | Static framework: `VBNImage.decode(data:) -> CGImage` (upright, non-premultiplied alpha), `VBNImage.decodeRGBA`, `pngData`, `QuickLZ` (1.5 level 3), `BC3` (DXT5). Linked statically into each target, so there is no embedded framework to sign. |
-| `iVBN` | Host app (AppKit plus a small SwiftUI view), `App/`. |
-| `iVBNPreview` | Quick Look preview extension, `Preview/`. Sandboxed, as Quick Look requires. |
-| `iVBNThumbnail` | Quick Look thumbnail extension, `Thumbnail/`. Sandboxed. |
+| `unVBN` | Host app (AppKit plus a small SwiftUI view), `App/`. |
+| `unVBNPreview` | Quick Look preview extension, `Preview/`. Sandboxed, as Quick Look requires. |
+| `unVBNThumbnail` | Quick Look thumbnail extension, `Thumbnail/`. Sandboxed. |
 | `VBNCoreTests` | Unit tests, `Tests/VBNCoreTests/`. |
 
 Deployment target: macOS 14. This is the oldest version still getting security updates. The APIs used
@@ -52,13 +52,13 @@ need macOS 12 or later (`QLPreviewReply`, data-based previews).
 
 ## Build and test
 
-`project.yml` is the source of truth. `iVBN.xcodeproj` is generated with [XcodeGen](https://github.com/yonaskolb/XcodeGen)
+`project.yml` is the source of truth. `unVBN.xcodeproj` is generated with [XcodeGen](https://github.com/yonaskolb/XcodeGen)
 and committed, so the project opens without XcodeGen. After editing `project.yml`, run `xcodegen generate` and commit both.
 
 ```sh
 xcodegen generate
-xcodebuild -project iVBN.xcodeproj -scheme iVBN -destination 'platform=macOS' -derivedDataPath build/DerivedData test
-xcodebuild -project iVBN.xcodeproj -scheme iVBN -configuration Release -derivedDataPath build/DerivedData build
+xcodebuild -project unVBN.xcodeproj -scheme unVBN -destination 'platform=macOS' -derivedDataPath build/DerivedData test
+xcodebuild -project unVBN.xcodeproj -scheme unVBN -configuration Release -derivedDataPath build/DerivedData build
 ```
 
 The tests build small synthetic files in code: raw BGRA 4×4, DXT5 8×4 with known blocks, and QuickLZ
@@ -87,8 +87,8 @@ built them. To give the app to other Macs:
 1. Set `DEVELOPMENT_TEAM` and `CODE_SIGN_IDENTITY = "Developer ID Application"` in `project.yml`,
    and set `ENABLE_HARDENED_RUNTIME: YES`. The extensions keep `com.apple.security.app-sandbox`.
 2. Archive, then export with the Developer ID method (`xcodebuild -exportArchive`).
-3. Notarize: `xcrun notarytool submit iVBN.zip --keychain-profile <profile> --wait`, then
-   `xcrun stapler staple iVBN.app`.
+3. Notarize: `xcrun notarytool submit unVBN.zip --keychain-profile <profile> --wait`, then
+   `xcrun stapler staple unVBN.app`.
 4. Ship as a zip or dmg. Users copy it to `/Applications` and launch it once.
 
 The app icon is drawn in code: `scripts/make-icon.sh` runs `scripts/make-icon.swift` and rebuilds

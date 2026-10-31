@@ -1,6 +1,6 @@
-name: iVBN
+name: unVBN
 options:
-  bundleIdPrefix: com.notjeremie.ivbn
+  bundleIdPrefix: com.notjeremie.unvbn
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
@@ -24,11 +24,11 @@ targets:
     sources: [Sources/VBNCore]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.notjeremie.ivbn.core
+        PRODUCT_BUNDLE_IDENTIFIER: com.notjeremie.unvbn.core
         GENERATE_INFOPLIST_FILE: YES
         SKIP_INSTALL: YES
 
-  iVBN:
+  unVBN:
     type: application
     platform: macOS
     sources:
@@ -37,17 +37,17 @@ targets:
     dependencies:
       - target: VBNCore
         embed: false
-      - target: iVBNPreview
-      - target: iVBNThumbnail
+      - target: unVBNPreview
+      - target: unVBNThumbnail
     settings:
       base:
-        PRODUCT_NAME: iVBN
-        PRODUCT_BUNDLE_IDENTIFIER: com.notjeremie.ivbn
+        PRODUCT_NAME: unVBN
+        PRODUCT_BUNDLE_IDENTIFIER: com.notjeremie.unvbn
         INFOPLIST_FILE: App/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: NO
 
-  iVBNPreview:
+  unVBNPreview:
     type: app-extension
     platform: macOS
     sources:
@@ -59,12 +59,12 @@ targets:
       - sdk: Quartz.framework
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.notjeremie.ivbn.preview
+        PRODUCT_BUNDLE_IDENTIFIER: com.notjeremie.unvbn.preview
         INFOPLIST_FILE: Preview/Info.plist
         GENERATE_INFOPLIST_FILE: NO
-        CODE_SIGN_ENTITLEMENTS: Preview/iVBNPreview.entitlements
+        CODE_SIGN_ENTITLEMENTS: Preview/unVBNPreview.entitlements
 
-  iVBNThumbnail:
+  unVBNThumbnail:
     type: app-extension
     platform: macOS
     sources:
@@ -76,10 +76,10 @@ targets:
       - sdk: QuickLookThumbnailing.framework
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.notjeremie.ivbn.thumbnail
+        PRODUCT_BUNDLE_IDENTIFIER: com.notjeremie.unvbn.thumbnail
         INFOPLIST_FILE: Thumbnail/Info.plist
         GENERATE_INFOPLIST_FILE: NO
-        CODE_SIGN_ENTITLEMENTS: Thumbnail/iVBNThumbnail.entitlements
+        CODE_SIGN_ENTITLEMENTS: Thumbnail/unVBNThumbnail.entitlements
 
   VBNCoreTests:
     type: bundle.unit-test
@@ -90,14 +90,14 @@ targets:
         embed: false
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.notjeremie.ivbn.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.notjeremie.unvbn.tests
         GENERATE_INFOPLIST_FILE: YES
 
 schemes:
-  iVBN:
+  unVBN:
     build:
       targets:
-        iVBN: all
+        unVBN: all
         VBNCoreTests: [test]
     test:
       targets: [VBNCoreTests]
