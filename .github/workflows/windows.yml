@@ -75,6 +75,48 @@ jobs:
           if ($LASTEXITCODE) { throw "codec still registered after regsvr32 /u" }
           if (Test-Path 'Registry::HKEY_CLASSES_ROOT\unVBN.vbnfile') { throw "ProgID left behind after regsvr32 /u" }
 
+      - name: Registry ownership (other owners kept, v0.3.0 entries migrated, nothing left)
+        run: |
+          $dll = (Resolve-Path build\Release\unvbn_wic.dll).Path
+          function Reg([string[]]$a) {
+            $p = Start-Process regsvr32 -ArgumentList (@('/s') + $a + "`"$dll`"") -Wait -PassThru
+            if ($p.ExitCode) { throw "regsvr32 $a failed: $($p.ExitCode)" }
+          }
+          function Val($key, $name) { (Get-ItemProperty -LiteralPath $key -ErrorAction SilentlyContinue).$name }
+          $ext = 'HKLM:\SOFTWARE\Classes\.vbn'
+          $sfa = 'HKLM:\SOFTWARE\Classes\SystemFileAssociations\.vbn'
+          $thumb = 'ShellEx\{e357fccd-a995-4576-b01f-234630154e96}'
+          $ours = '{61B04E68-AE36-45F4-808B-0AB6CCED37DA}'
+          if ((Test-Path -LiteralPath $ext) -or (Test-Path -LiteralPath $sfa)) { throw "not clean after regsvr32 /u" }
+
+          Write-Host "-- another program already owns .vbn"
+          New-Item -Path "$ext\$thumb" -Force | Out-Null
+          Set-ItemProperty -LiteralPath $ext -Name '(default)' -Value 'Other.vbnfile'
+          Set-ItemProperty -LiteralPath "$ext\$thumb" -Name '(default)' -Value '{11111111-2222-3333-4444-555555555555}'
+          Reg @()
+          if ((Val $ext '(default)') -ne 'Other.vbnfile') { throw "default program taken over" }
+          if ((Val "$ext\$thumb" '(default)') -ne '{11111111-2222-3333-4444-555555555555}') { throw "other thumbnail handler replaced" }
+          if ($null -eq (Val "$ext\OpenWithProgids" 'unVBN.vbnfile')) { throw "not added to Open with" }
+          Reg @('/u')
+          if ((Val $ext '(default)') -ne 'Other.vbnfile') { throw "other default removed by unregister" }
+          if ((Val "$ext\$thumb" '(default)') -ne '{11111111-2222-3333-4444-555555555555}') { throw "other thumbnail handler removed" }
+          if (Test-Path -LiteralPath "$ext\OpenWithProgids") { throw "OpenWithProgids left behind" }
+          if (Test-Path -LiteralPath $sfa) { throw "SystemFileAssociations\.vbn left behind" }
+          Remove-Item -LiteralPath $ext -Recurse -Force
+
+          Write-Host "-- upgrade from v0.3.0 (thumbnail entry and markers in .vbn)"
+          New-Item -Path "$ext\$thumb" -Force | Out-Null
+          Set-ItemProperty -LiteralPath $ext -Name '(default)' -Value 'unVBN.vbnfile'
+          New-ItemProperty -LiteralPath $ext -Name 'unVBN.CreatedKey' -Value 1 -PropertyType DWord | Out-Null
+          Set-ItemProperty -LiteralPath "$ext\$thumb" -Name '(default)' -Value $ours
+          Reg @()
+          if (Test-Path -LiteralPath "$ext\ShellEx") { throw "v0.3.0 thumbnail entry not removed" }
+          if ($null -ne (Val $ext 'unVBN.CreatedKey')) { throw "v0.3.0 marker not removed" }
+          build\Release\wic_test.exe
+          if ($LASTEXITCODE) { throw "WIC tests failed after migrating v0.3.0 entries" }
+          Reg @('/u')
+          if ((Test-Path -LiteralPath $ext) -or (Test-Path -LiteralPath $sfa)) { throw "keys left behind after unregister" }
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
@@ -105,6 +147,9 @@ jobs:
           build\Release\wic_test.exe --expect-missing
           if ($LASTEXITCODE) { throw "codec still registered after uninstall" }
           if (Test-Path 'C:\Program Files\unVBN\unvbn_wic.dll') { throw "DLL left behind" }
+          foreach ($k in 'HKLM:\SOFTWARE\Classes\.vbn', 'HKLM:\SOFTWARE\Classes\SystemFileAssociations\.vbn') {
+            if (Test-Path -LiteralPath $k) { throw "$k left behind after uninstall" }
+          }
 
       - uses: actions/upload-artifact@v4
         if: matrix.publish

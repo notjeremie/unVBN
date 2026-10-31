@@ -413,26 +413,24 @@ const std::wstring kInstanceKey =
     kClasses + L"CLSID\\{7ED96837-96F0-4812-B211-F13C24117ED3}\\Instance\\" UNVBN_DECODER_CLSID_STR;
 const std::wstring kProgId = L"unVBN.vbnfile";
 const std::wstring kExtKey = kClasses + L".vbn";
-const std::wstring kThumbnailKey = kExtKey + L"\\ShellEx\\{e357fccd-a995-4576-b01f-234630154e96}";
-const std::wstring kPreviewKey = kClasses + L"SystemFileAssociations\\.vbn\\ShellEx\\ContextMenuHandlers\\ShellImagePreview";
+// unVBN's shell handlers live under SystemFileAssociations\.vbn, a key only unVBN writes. Explorer looks
+// there after the ProgID and the .vbn key, so a handler another program registered for .vbn wins, and
+// before SystemFileAssociations\image, so unVBN wins over the generic photo thumbnailer.
+const std::wstring kSystemAssocKey = kClasses + L"SystemFileAssociations\\.vbn";
+const wchar_t* const kThumbnailShellEx = L"\\ShellEx\\{e357fccd-a995-4576-b01f-234630154e96}";
+const std::wstring kThumbnailKey = kSystemAssocKey + kThumbnailShellEx;
+const std::wstring kPreviewKey = kSystemAssocKey + L"\\ShellEx\\ContextMenuHandlers\\ShellImagePreview";
+// v0.3.0 and earlier put the thumbnail handler in .vbn\ShellEx and kept markers there; removed on sight.
+const std::wstring kLegacyThumbnailKey = kExtKey + kThumbnailShellEx;
 const std::wstring kKindMapKey = L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\KindMap";
 const std::wstring kThumbnailClsidKey = kClasses + L"CLSID\\" UNVBN_THUMBNAIL_CLSID_STR;
 const std::wstring kApprovedKey = L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Shell Extensions\\Approved";
 const wchar_t* const kPhotoViewerPreview = L"{FFE2A43C-56B9-4bf5-9A79-CC6D4285608A}";
 const wchar_t* const kMime = L"image/x-vizrt-vbn";
 const wchar_t* const kFriendlyName = L"unVBN Vizrt VBN Decoder";
-// Markers recording what registration created, so unregistering never removes another app's association.
-const wchar_t* const kCreatedExtMarker = L"unVBN.CreatedKey";
-const wchar_t* const kAddedThumbnailMarker = L"unVBN.AddedThumbnail";
+const wchar_t* const kLegacyMarkers[] = {L"unVBN.CreatedKey", L"unVBN.AddedThumbnail"};
 
 HRESULT check(LSTATUS status) { return status == ERROR_SUCCESS ? S_OK : HRESULT_FROM_WIN32(status); }
-
-bool keyExists(const std::wstring& path) {
-    HKEY key = nullptr;
-    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, path.c_str(), 0, KEY_READ, &key) != ERROR_SUCCESS) return false;
-    RegCloseKey(key);
-    return true;
-}
 
 bool readString(const std::wstring& path, const wchar_t* name, std::wstring& value) {
     wchar_t buffer[512];
@@ -441,11 +439,6 @@ bool readString(const std::wstring& path, const wchar_t* name, std::wstring& val
         return false;
     value = buffer;
     return true;
-}
-
-bool readDword(const std::wstring& path, const wchar_t* name, DWORD& value) {
-    DWORD size = sizeof value;
-    return RegGetValueW(HKEY_LOCAL_MACHINE, path.c_str(), name, RRF_RT_REG_DWORD, nullptr, &value, &size) == ERROR_SUCCESS;
 }
 
 /// Creates the key if needed and sets the value (HKLM).
@@ -532,8 +525,19 @@ HRESULT registerDecoder(const std::wstring& dllPath) {
     return S_OK;
 }
 
-/// Makes Explorer treat .vbn as a picture: thumbnails (our handler), preview, Kind, "Open with". An
-/// existing association (e.g. from a Vizrt install) keeps its default program and thumbnail handler.
+/// Removes what v0.3.0 and earlier wrote into the shared .vbn key: its thumbnail entry (only if it is
+/// still unVBN's) and the ownership markers.
+void removeLegacyEntries() {
+    std::wstring current;
+    if (readString(kLegacyThumbnailKey, nullptr, current) && _wcsicmp(current.c_str(), UNVBN_THUMBNAIL_CLSID_STR) == 0)
+        deleteTree(kLegacyThumbnailKey);
+    for (const wchar_t* marker : kLegacyMarkers) deleteValue(kExtKey, marker);
+    deleteEmptyKeys(kLegacyThumbnailKey, kExtKey);
+}
+
+/// Makes Explorer treat .vbn as a picture: thumbnails (our handler), preview, Kind, "Open with". In the
+/// shared .vbn key it only fills values that are missing, so an existing association (e.g. from a Vizrt
+/// install) keeps its default program, and adds itself to "Open with".
 HRESULT registerShell() {
     TRY(setString(kClasses + kProgId, nullptr, L"Vizrt image"));
     TRY(setString(kClasses + kProgId, L"FriendlyTypeName", L"Vizrt image"));
@@ -549,45 +553,41 @@ HRESULT registerShell() {
                       REG_EXPAND_SZ));
     }
 
+    removeLegacyEntries();
     std::wstring current;
-    const bool extExisted = keyExists(kExtKey);
-    if (!extExisted) TRY(setDword(kExtKey, kCreatedExtMarker, 1));
     if (!readString(kExtKey, nullptr, current) || current.empty()) TRY(setString(kExtKey, nullptr, kProgId));
     if (!readString(kExtKey, L"Content Type", current)) TRY(setString(kExtKey, L"Content Type", kMime));
     if (!readString(kExtKey, L"PerceivedType", current)) TRY(setString(kExtKey, L"PerceivedType", L"image"));
     TRY(setString(kExtKey + L"\\OpenWithProgids", kProgId.c_str(), L""));
     TRY(setString(kExtKey + L"\\OpenWithList\\PhotoViewer.dll", nullptr, L""));
-    // Thumbnails: our own handler, unless another program already owns the slot.
-    if (!readString(kThumbnailKey, nullptr, current) || _wcsicmp(current.c_str(), UNVBN_THUMBNAIL_CLSID_STR) == 0) {
-        TRY(setString(kThumbnailKey, nullptr, UNVBN_THUMBNAIL_CLSID_STR));
-        if (extExisted) TRY(setDword(kExtKey, kAddedThumbnailMarker, 1));
-    }
+
+    TRY(setString(kThumbnailKey, nullptr, UNVBN_THUMBNAIL_CLSID_STR));
     TRY(setString(kPreviewKey, nullptr, kPhotoViewerPreview));
     TRY(setString(kKindMapKey, L".vbn", L"picture"));
     return S_OK;
 }
 
+/// Undoes registerShell without any recorded state: values in .vbn are removed only when they are
+/// unVBN's, and .vbn itself only when nothing else is left in it.
 void unregisterShell() {
-    DWORD created = 0, addedThumbnail = 0;
-    readDword(kExtKey, kCreatedExtMarker, created);
-    readDword(kExtKey, kAddedThumbnailMarker, addedThumbnail);
-    if (created) {
-        deleteTree(kExtKey);
-    } else {
-        std::wstring current;
-        if (readString(kExtKey, nullptr, current) && current == kProgId) deleteValue(kExtKey, nullptr);
-        deleteValue(kExtKey + L"\\OpenWithProgids", kProgId.c_str());
-        if (addedThumbnail) deleteTree(kThumbnailKey);
-        deleteValue(kExtKey, kAddedThumbnailMarker);
-        deleteEmptyKeys(kExtKey + L"\\OpenWithProgids", kExtKey);
-        deleteEmptyKeys(kThumbnailKey, kExtKey);
-    }
+    removeLegacyEntries();
+    std::wstring current;
+    if (readString(kExtKey, nullptr, current) && current == kProgId) deleteValue(kExtKey, nullptr);
+    if (readString(kExtKey, L"Content Type", current) && current == kMime) deleteValue(kExtKey, L"Content Type");
+    // PerceivedType "image" is left in place when another program still owns .vbn (it is true either way).
+    if (!readString(kExtKey, nullptr, current) && readString(kExtKey, L"PerceivedType", current) && current == L"image")
+        deleteValue(kExtKey, L"PerceivedType");
+    deleteValue(kExtKey + L"\\OpenWithProgids", kProgId.c_str());
+    deleteTree(kExtKey + L"\\OpenWithList\\PhotoViewer.dll");
+    deleteEmptyKeys(kExtKey + L"\\OpenWithProgids", kClasses);
+    deleteEmptyKeys(kExtKey + L"\\OpenWithList", kClasses);
+
     deleteTree(kClasses + kProgId);
+    deleteTree(kThumbnailKey);
     deleteTree(kPreviewKey);
-    deleteEmptyKeys(kClasses + L"SystemFileAssociations\\.vbn\\ShellEx\\ContextMenuHandlers",
-                    kClasses + L"SystemFileAssociations");
-    std::wstring kind;
-    if (readString(kKindMapKey, L".vbn", kind) && kind == L"picture") deleteValue(kKindMapKey, L".vbn");
+    deleteEmptyKeys(kSystemAssocKey + L"\\ShellEx\\ContextMenuHandlers", kClasses + L"SystemFileAssociations");
+    deleteEmptyKeys(kSystemAssocKey + L"\\ShellEx", kClasses + L"SystemFileAssociations");
+    if (readString(kKindMapKey, L".vbn", current) && current == L"picture") deleteValue(kKindMapKey, L".vbn");
 }
 
 }  // namespace

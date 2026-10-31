@@ -253,8 +253,8 @@ int wmain(int argc, wchar_t** argv) {
             checkThumbnailHandler(big);
             wchar_t handler[64] = {};
             DWORD size = sizeof handler;
-            RegGetValueW(HKEY_CLASSES_ROOT, L".vbn\\ShellEx\\{e357fccd-a995-4576-b01f-234630154e96}", nullptr, RRF_RT_REG_SZ,
-                         nullptr, handler, &size);
+            RegGetValueW(HKEY_CLASSES_ROOT, L"SystemFileAssociations\\.vbn\\ShellEx\\{e357fccd-a995-4576-b01f-234630154e96}",
+                         nullptr, RRF_RT_REG_SZ, nullptr, handler, &size);
             CHECK(_wcsicmp(handler, UNVBN_THUMBNAIL_CLSID_STR) == 0, ".vbn thumbnails use unVBN's handler");
             std::printf("-- Explorer thumbnails\n");
             checkThumbnail(rawPath, "thumbnail of a small file");
