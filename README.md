@@ -144,13 +144,19 @@ The app icon is drawn in code: `scripts/make-icon.sh` runs `scripts/make-icon.sw
 ## Windows
 
 `windows/` holds a **WIC codec** (Windows Imaging Component, the system's image-decoding layer) for `.vbn`.
-Once installed, Windows reads `.vbn` like a built-in image format: Explorer draws thumbnails, and apps that
-load images through WIC can open them. It only opens files: no conversion, no export.
+Once installed, Windows reads `.vbn` like a built-in image format. It only opens files: no conversion, no export.
+
+- **Explorer thumbnails**, drawn by the codec's own thumbnail handler (Windows 10's generic photo thumbnailer
+  does not draw third-party formats, so unVBN does not rely on it).
+- **Double-click** opens the image in **Windows Photo Viewer** (built into Windows 10 and 11), unless you
+  already chose another default app for `.vbn`.
+- **Any app that loads images through WIC** can open `.vbn`. The **Photos** app does not: it only reads
+  formats it ships with or gets from the Microsoft Store.
 
 **Install**: download `unVBN-windows-<version>-x64.msi` (or `-arm64.msi` on an ARM PC such as a Surface Pro X
 or a Snapdragon laptop) from [Releases](https://github.com/notjeremie/unVBN/releases) and run it. It needs
 administrator rights and installs to `C:\Program Files\unVBN\`. Uninstall from *Settings > Apps*. If thumbnails
-don't appear right away, sign out and back in (Explorer caches thumbnails). The MSI is not code-signed, so
+don't appear right away, restart Explorer (Task Manager > *Windows Explorer* > *Restart*). The MSI is not code-signed, so
 Windows SmartScreen shows a warning first: *More info > Run anyway*.
 
 If another program (such as a Vizrt install) already owns the `.vbn` file type, the codec does not take over
@@ -161,7 +167,7 @@ How it is built:
 | Part | What |
 |---|---|
 | `windows/src/vbn_decode.*` | Portable C++17 port of `VBNCore`, pixel-identical to it. QuickLZ output is capped at the size the header requires, so a hostile file cannot make Explorer allocate gigabytes. |
-| `windows/src/wic_codec.cpp` | The COM DLL: `IWICBitmapDecoder` + frame (32bpp BGRA, straight alpha), magic-number pattern `1E F1 0D 90`, and `DllRegisterServer` / `DllUnregisterServer`, the single source of truth for the registry entries. |
+| `windows/src/wic_codec.cpp` | The COM DLL: the WIC decoder (`IWICBitmapDecoder` + frame, 32bpp BGRA, straight alpha, magic-number pattern `1E F1 0D 90`), the Explorer thumbnail handler (`IThumbnailProvider`), and `DllRegisterServer` / `DllUnregisterServer`, the single source of truth for the registry entries. |
 | `windows/installer/unVBN.wxs` | WiX v4 per-machine MSI that installs the DLL and calls its self-registration. |
 | `windows/test/` | `test_decode` (portable decoder tests, also run on macOS) and `wic_test` (decodes through WIC itself, so it only passes when the codec is registered). |
 
