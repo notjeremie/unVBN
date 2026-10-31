@@ -5,12 +5,16 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <propsys.h>
 #include <shlobj.h>
+#include <shlwapi.h>
+#include <thumbcache.h>
 #include <shobjidl.h>
 #include <wincodec.h>
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <string>
@@ -140,6 +144,35 @@ static void checkThumbnail(const std::wstring& path, const char* label) {
     CHECK(SUCCEEDED(hr), label);
 }
 
+/// unVBN's own thumbnail handler, called directly: 256x256 frame -> 64x64 premultiplied BGRA bitmap.
+static void checkThumbnailHandler(const Bytes& big) {
+    std::printf("-- unVBN thumbnail handler\n");
+    Com<IInitializeWithStream> init;
+    HRESULT hr = CoCreateInstance(CLSID_UnVBNThumbnail, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&init));
+    CHECK(SUCCEEDED(hr), "thumbnail handler registered");
+    if (FAILED(hr)) return;
+    IStream* stream = SHCreateMemStream(big.data(), UINT(big.size()));
+    CHECK(SUCCEEDED(init->Initialize(stream, STGM_READ)), "Initialize(stream)");
+    stream->Release();
+    Com<IThumbnailProvider> provider;
+    init->QueryInterface(IID_PPV_ARGS(&provider));
+    HBITMAP bitmap = nullptr;
+    WTS_ALPHATYPE alpha = WTSAT_UNKNOWN;
+    CHECK(provider && SUCCEEDED(provider->GetThumbnail(64, &bitmap, &alpha)) && bitmap, "GetThumbnail(64)");
+    if (!bitmap) return;
+    DIBSECTION dib{};
+    GetObjectW(bitmap, sizeof dib, &dib);
+    CHECK(dib.dsBm.bmWidth == 64 && std::abs(dib.dsBm.bmHeight) == 64 && dib.dsBm.bmBitsPixel == 32, "64x64, 32 bpp");
+    CHECK(alpha == WTSAT_ARGB, "has alpha");
+    // Centre of bigFrame(): R = x ~ 128, G = y ~ 128, A = 255 - y/2 ~ 191, so premultiplied R, G ~ 96.
+    // (B = x ^ y averages unpredictably under scaling, so it is not checked.)
+    const BYTE* p = static_cast<const BYTE*>(dib.dsBm.bmBits) + 32 * dib.dsBm.bmWidthBytes + 32 * 4;
+    std::printf("     centre BGRA = %u %u %u %u\n", p[0], p[1], p[2], p[3]);
+    CHECK(std::abs(int(p[1]) - 96) < 14 && std::abs(int(p[2]) - 96) < 14 && std::abs(int(p[3]) - 191) < 14,
+          "thumbnail pixels match the image (premultiplied)");
+    DeleteObject(bitmap);
+}
+
 static void checkDecoder(IWICImagingFactory* factory, IWICBitmapDecoder* decoder, const Bytes& file) {
     HRESULT hr = S_OK;
     GUID container{};
@@ -204,6 +237,9 @@ int wmain(int argc, wchar_t** argv) {
             CHECK(hr == WINCODEC_ERR_COMPONENTNOTFOUND, "codec is no longer registered");
             Com<IWICComponentInfo> info;
             CHECK(FAILED(factory->CreateComponentInfo(CLSID_UnVBNDecoder, &info)), "component info gone");
+            Com<IInitializeWithStream> thumb;
+            CHECK(FAILED(CoCreateInstance(CLSID_UnVBNThumbnail, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&thumb))),
+                  "thumbnail handler gone");
         } else {
             Com<IWICComponentInfo> info;
             CHECK(SUCCEEDED(factory->CreateComponentInfo(CLSID_UnVBNDecoder, &info)), "codec registered with WIC");
@@ -221,6 +257,12 @@ int wmain(int argc, wchar_t** argv) {
             checkThroughWIC(factory.p, bigPath, big, "256x256 raw RGBA (256 KB)");
             checkThroughShortReads(factory.p, big, 1000, "256 KB through 1000-byte reads");
             checkThroughShortReads(factory.p, dxt, 7, "DXT5 through 7-byte reads (header split)");
+            checkThumbnailHandler(big);
+            wchar_t handler[64] = {};
+            DWORD size = sizeof handler;
+            RegGetValueW(HKEY_CLASSES_ROOT, L".vbn\\ShellEx\\{e357fccd-a995-4576-b01f-234630154e96}", nullptr, RRF_RT_REG_SZ,
+                         nullptr, handler, &size);
+            CHECK(_wcsicmp(handler, UNVBN_THUMBNAIL_CLSID_STR) == 0, ".vbn thumbnails use unVBN's handler");
             std::printf("-- Explorer thumbnails\n");
             checkThumbnail(rawPath, "thumbnail of a small file");
             checkThumbnail(bigPath, "thumbnail of a 256 KB file");

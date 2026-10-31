@@ -7,9 +7,13 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <propsys.h>
 #include <shlobj.h>
+#include <thumbcache.h>
 #include <wincodec.h>
+#include <wrl/client.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <memory>
@@ -274,11 +278,100 @@ private:
     std::shared_ptr<const vbn::Image> image_;
 };
 
+// MARK: - Explorer thumbnail handler
+
+using Microsoft::WRL::ComPtr;
+
+/// Scales a decoded image to fit inside cx x cx (never upscaling) into a top-down premultiplied DIB.
+HRESULT makeThumbnail(const vbn::Image& image, UINT cx, HBITMAP* out) {
+    const double scale = std::min(1.0, double(cx) / double(std::max(image.width, image.height)));
+    const UINT w = std::max(1u, UINT(image.width * scale + 0.5)), h = std::max(1u, UINT(image.height * scale + 0.5));
+
+    ComPtr<IWICImagingFactory> factory;
+    HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+    ComPtr<IWICBitmap> source;
+    if (SUCCEEDED(hr))
+        hr = factory->CreateBitmapFromMemory(image.width, image.height, GUID_WICPixelFormat32bppBGRA, image.width * 4,
+                                             UINT(image.bgra.size()), const_cast<BYTE*>(image.bgra.data()), &source);
+    // Premultiply first, then scale, so transparent edges don't bleed colour.
+    ComPtr<IWICFormatConverter> premultiplied;
+    if (SUCCEEDED(hr)) hr = factory->CreateFormatConverter(&premultiplied);
+    if (SUCCEEDED(hr))
+        hr = premultiplied->Initialize(source.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0,
+                                       WICBitmapPaletteTypeCustom);
+    ComPtr<IWICBitmapScaler> scaler;
+    if (SUCCEEDED(hr)) hr = factory->CreateBitmapScaler(&scaler);
+    if (SUCCEEDED(hr)) hr = scaler->Initialize(premultiplied.Get(), w, h, WICBitmapInterpolationModeFant);
+    if (FAILED(hr)) return hr;
+
+    BITMAPINFO info{};
+    info.bmiHeader.biSize = sizeof info.bmiHeader;
+    info.bmiHeader.biWidth = LONG(w);
+    info.bmiHeader.biHeight = -LONG(h);  // top-down
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    void* bits = nullptr;
+    HBITMAP bitmap = CreateDIBSection(nullptr, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
+    if (!bitmap) return E_OUTOFMEMORY;
+    hr = scaler->CopyPixels(nullptr, w * 4, w * 4 * h, static_cast<BYTE*>(bits));
+    if (FAILED(hr)) { DeleteObject(bitmap); return hr; }
+    *out = bitmap;
+    return S_OK;
+}
+
+/// Explorer's thumbnail handler for .vbn. Draws thumbnails itself rather than relying on the system's
+/// PhotoThumbnailProvider, which on Windows 10 does not use third-party WIC codecs.
+class ThumbnailProvider final : public IInitializeWithStream, public IThumbnailProvider {
+public:
+    ThumbnailProvider() { ++g_objects; }
+    ~ThumbnailProvider() { --g_objects; }
+
+    STDMETHODIMP QueryInterface(REFIID iid, void** out) override {
+        if (!out) return E_POINTER;
+        if (iid == IID_IUnknown || iid == IID_IInitializeWithStream) *out = static_cast<IInitializeWithStream*>(this);
+        else if (iid == IID_IThumbnailProvider) *out = static_cast<IThumbnailProvider*>(this);
+        else { *out = nullptr; return E_NOINTERFACE; }
+        AddRef();
+        return S_OK;
+    }
+    STDMETHODIMP_(ULONG) AddRef() override { return ++refs_; }
+    STDMETHODIMP_(ULONG) Release() override {
+        const ULONG n = --refs_;
+        if (n == 0) delete this;
+        return n;
+    }
+
+    STDMETHODIMP Initialize(IStream* stream, DWORD) override {
+        if (!stream) return E_INVALIDARG;
+        if (!data_.empty()) return HRESULT_FROM_WIN32(ERROR_ALREADY_INITIALIZED);
+        try {
+            return readAll(stream, data_);
+        } catch (const std::bad_alloc&) {
+            return E_OUTOFMEMORY;
+        }
+    }
+
+    STDMETHODIMP GetThumbnail(UINT cx, HBITMAP* bitmap, WTS_ALPHATYPE* alpha) override {
+        if (!bitmap || !alpha || cx == 0) return E_INVALIDARG;
+        *bitmap = nullptr;
+        vbn::Image image;
+        std::string error;
+        if (!vbn::decode(data_.data(), data_.size(), image, error)) return WINCODEC_ERR_BADIMAGE;
+        *alpha = WTSAT_ARGB;
+        return makeThumbnail(image, cx, bitmap);
+    }
+
+private:
+    std::atomic<ULONG> refs_{1};
+    std::vector<uint8_t> data_;
+};
+
 // MARK: - Class factory
 
 class Factory final : public IClassFactory {
 public:
-    Factory() { ++g_objects; }
+    explicit Factory(bool thumbnail) : thumbnail_(thumbnail) { ++g_objects; }
     ~Factory() { --g_objects; }
 
     STDMETHODIMP QueryInterface(REFIID iid, void** out) override {
@@ -302,10 +395,11 @@ public:
         if (!out) return E_POINTER;
         *out = nullptr;
         if (outer) return CLASS_E_NOAGGREGATION;
-        Decoder* decoder = new (std::nothrow) Decoder();
-        if (!decoder) return E_OUTOFMEMORY;
-        const HRESULT hr = decoder->QueryInterface(iid, out);
-        decoder->Release();
+        IUnknown* object = thumbnail_ ? static_cast<IInitializeWithStream*>(new (std::nothrow) ThumbnailProvider())
+                                      : static_cast<IUnknown*>(static_cast<IWICBitmapDecoder*>(new (std::nothrow) Decoder()));
+        if (!object) return E_OUTOFMEMORY;
+        const HRESULT hr = object->QueryInterface(iid, out);
+        object->Release();
         return hr;
     }
     STDMETHODIMP LockServer(BOOL lock) override {
@@ -315,6 +409,7 @@ public:
 
 private:
     std::atomic<ULONG> refs_{1};
+    const bool thumbnail_;
 };
 
 // MARK: - Registry
@@ -330,6 +425,8 @@ const std::wstring kThumbnailKey = kExtKey + L"\\ShellEx\\{e357fccd-a995-4576-b0
 const std::wstring kPreviewKey = kClasses + L"SystemFileAssociations\\.vbn\\ShellEx\\ContextMenuHandlers\\ShellImagePreview";
 const std::wstring kKindMapKey = L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\KindMap";
 const wchar_t* const kPhotoThumbnailProvider = L"{C7657C4A-9F68-40fa-A4DF-96BC08EB3551}";
+const std::wstring kThumbnailClsidKey = kClasses + L"CLSID\\" UNVBN_THUMBNAIL_CLSID_STR;
+const std::wstring kApprovedKey = L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Shell Extensions\\Approved";
 const wchar_t* const kPhotoViewerPreview = L"{FFE2A43C-56B9-4bf5-9A79-CC6D4285608A}";
 const wchar_t* const kMime = L"image/x-vizrt-vbn";
 const wchar_t* const kFriendlyName = L"unVBN Vizrt VBN Decoder";
@@ -412,6 +509,20 @@ void deleteEmptyKeys(std::wstring path, const std::wstring& stop) {
         if (FAILED(hr_)) return hr_;     \
     } while (0)
 
+bool readDword(const std::wstring& path, const wchar_t* name, DWORD& value) {
+    DWORD size = sizeof value;
+    return RegGetValueW(HKEY_LOCAL_MACHINE, path.c_str(), name, RRF_RT_REG_DWORD, nullptr, &value, &size) == ERROR_SUCCESS;
+}
+
+HRESULT registerThumbnailHandler(const std::wstring& dllPath) {
+    TRY(setString(kThumbnailClsidKey, nullptr, L"unVBN thumbnail handler"));
+    TRY(setString(kThumbnailClsidKey + L"\\InprocServer32", nullptr, dllPath));
+    TRY(setString(kThumbnailClsidKey + L"\\InprocServer32", L"ThreadingModel", L"Apartment"));
+    // Listed as approved, which managed PCs with EnforceShellExtensionSecurity require.
+    TRY(setString(kApprovedKey, UNVBN_THUMBNAIL_CLSID_STR, L"unVBN thumbnail handler"));
+    return S_OK;
+}
+
 HRESULT registerDecoder(const std::wstring& dllPath) {
     const std::wstring& k = kDecoderKey;
     TRY(setString(k, nullptr, kFriendlyName));
@@ -442,8 +553,8 @@ HRESULT registerDecoder(const std::wstring& dllPath) {
     return S_OK;
 }
 
-/// Makes Explorer treat .vbn as a picture: thumbnails, preview, Kind, "Open with". An existing
-/// association (e.g. from a Vizrt install) keeps its default program and thumbnail handler.
+/// Makes Explorer treat .vbn as a picture: thumbnails (our handler), preview, Kind, "Open with". An
+/// existing association (e.g. from a Vizrt install) keeps its default program and thumbnail handler.
 HRESULT registerShell() {
     TRY(setString(kClasses + kProgId, nullptr, L"Vizrt image"));
     TRY(setString(kClasses + kProgId, L"FriendlyTypeName", L"Vizrt image"));
@@ -466,9 +577,18 @@ HRESULT registerShell() {
     if (!readString(kExtKey, L"PerceivedType", current)) TRY(setString(kExtKey, L"PerceivedType", L"image"));
     TRY(setString(kExtKey + L"\\OpenWithProgids", kProgId.c_str(), L""));
     TRY(setString(kExtKey + L"\\OpenWithList\\PhotoViewer.dll", nullptr, L""));
-    if (!readString(kThumbnailKey, nullptr, current)) {
-        TRY(setString(kThumbnailKey, nullptr, kPhotoThumbnailProvider));
-        if (extExisted) TRY(setDword(kExtKey, kAddedThumbnailMarker, 1));
+    // Thumbnails: our own handler, unless another program already owns the slot. A PhotoThumbnailProvider
+    // entry written by an earlier unVBN version (it does not draw .vbn on Windows 10) is replaced.
+    DWORD created = 0, added = 0;
+    readDword(kExtKey, kCreatedExtMarker, created);
+    readDword(kExtKey, kAddedThumbnailMarker, added);
+    bool takeThumbnail = !readString(kThumbnailKey, nullptr, current);
+    if (!takeThumbnail)
+        takeThumbnail = _wcsicmp(current.c_str(), UNVBN_THUMBNAIL_CLSID_STR) == 0 ||
+                        ((created || added) && _wcsicmp(current.c_str(), kPhotoThumbnailProvider) == 0);
+    if (takeThumbnail) {
+        TRY(setString(kThumbnailKey, nullptr, UNVBN_THUMBNAIL_CLSID_STR));
+        if (!created) TRY(setDword(kExtKey, kAddedThumbnailMarker, 1));
     }
     TRY(setString(kPreviewKey, nullptr, kPhotoViewerPreview));
     TRY(setString(kKindMapKey, L".vbn", L"picture"));
@@ -515,8 +635,8 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID) {
 STDAPI DllGetClassObject(REFCLSID clsid, REFIID iid, void** out) {
     if (!out) return E_POINTER;
     *out = nullptr;
-    if (clsid != CLSID_UnVBNDecoder) return CLASS_E_CLASSNOTAVAILABLE;
-    Factory* factory = new (std::nothrow) Factory();
+    if (clsid != CLSID_UnVBNDecoder && clsid != CLSID_UnVBNThumbnail) return CLASS_E_CLASSNOTAVAILABLE;
+    Factory* factory = new (std::nothrow) Factory(clsid == CLSID_UnVBNThumbnail);
     if (!factory) return E_OUTOFMEMORY;
     const HRESULT hr = factory->QueryInterface(iid, out);
     factory->Release();
@@ -530,6 +650,7 @@ STDAPI DllRegisterServer() {
     const DWORD n = GetModuleFileNameW(g_module, path, MAX_PATH);
     if (n == 0 || n == MAX_PATH) return HRESULT_FROM_WIN32(GetLastError());
     HRESULT hr = registerDecoder(path);
+    if (SUCCEEDED(hr)) hr = registerThumbnailHandler(path);
     if (SUCCEEDED(hr)) hr = registerShell();
     if (FAILED(hr)) return hr;
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
@@ -539,6 +660,8 @@ STDAPI DllRegisterServer() {
 STDAPI DllUnregisterServer() {
     deleteTree(kDecoderKey);
     deleteTree(kInstanceKey);
+    deleteTree(kThumbnailClsidKey);
+    deleteValue(kApprovedKey, UNVBN_THUMBNAIL_CLSID_STR);
     unregisterShell();
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
     return S_OK;
