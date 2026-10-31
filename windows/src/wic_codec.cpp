@@ -110,7 +110,22 @@ private:
 
 // MARK: - Decoder
 
+/// Reads up to `size` bytes, looping over short reads; `got` is what was read before the end.
+HRESULT readUpTo(IStream* stream, BYTE* buffer, ULONG size, ULONG& got) {
+    got = 0;
+    while (got < size) {
+        ULONG n = 0;
+        const HRESULT hr = stream->Read(buffer + got, size - got, &n);
+        if (FAILED(hr)) return hr;
+        if (n == 0) break;
+        got += n;
+    }
+    return S_OK;
+}
+
 /// Reads the rest of `stream` (from its current position). Fails above kMaxFileSize.
+/// Streams may return fewer bytes than asked before the end (the Explorer thumbnail host does):
+/// only a read of 0 bytes means end of stream.
 HRESULT readAll(IStream* stream, std::vector<uint8_t>& out) {
     STATSTG stat{};
     if (SUCCEEDED(stream->Stat(&stat, STATFLAG_NONAME)) && stat.cbSize.QuadPart <= kMaxFileSize)
@@ -120,9 +135,9 @@ HRESULT readAll(IStream* stream, std::vector<uint8_t>& out) {
         ULONG got = 0;
         const HRESULT hr = stream->Read(chunk, sizeof chunk, &got);
         if (FAILED(hr)) return hr;
+        if (got == 0) return S_OK;
         if (out.size() + got > kMaxFileSize) return WINCODEC_ERR_BADIMAGE;
         out.insert(out.end(), chunk, chunk + got);
-        if (got < sizeof chunk) return S_OK;  // S_FALSE or short read: end of stream
     }
 }
 
@@ -158,7 +173,7 @@ public:
         if (FAILED(hr)) return hr;
         uint8_t header[vbn::kHeaderSize];
         ULONG got = 0;
-        hr = stream->Read(header, sizeof header, &got);
+        hr = readUpTo(stream, header, sizeof header, got);
         LARGE_INTEGER back;
         back.QuadPart = LONGLONG(start.QuadPart);
         stream->Seek(back, STREAM_SEEK_SET, nullptr);

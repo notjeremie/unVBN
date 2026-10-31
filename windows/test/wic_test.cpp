@@ -9,7 +9,9 @@
 #include <shobjidl.h>
 #include <wincodec.h>
 
+#include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <string>
 
@@ -42,6 +44,66 @@ static std::wstring writeTemp(const wchar_t* name, const Bytes& data) {
     return path;
 }
 
+/// An IStream that hands out at most `chunk` bytes per Read, like the Explorer thumbnail host's streams.
+class ShortReadStream final : public IStream {
+public:
+    ShortReadStream(Bytes data, ULONG chunk) : data_(std::move(data)), chunk_(chunk) {}
+    STDMETHODIMP QueryInterface(REFIID iid, void** out) override {
+        if (iid == IID_IUnknown || iid == IID_ISequentialStream || iid == IID_IStream) {
+            *out = static_cast<IStream*>(this); AddRef(); return S_OK;
+        }
+        *out = nullptr; return E_NOINTERFACE;
+    }
+    STDMETHODIMP_(ULONG) AddRef() override { return ++refs_; }
+    STDMETHODIMP_(ULONG) Release() override { const ULONG n = --refs_; if (!n) delete this; return n; }
+    STDMETHODIMP Read(void* buffer, ULONG size, ULONG* read) override {
+        const ULONG n = ULONG(std::min<size_t>({size_t(size), size_t(chunk_), data_.size() - pos_}));
+        std::memcpy(buffer, data_.data() + pos_, n);
+        pos_ += n;
+        if (read) *read = n;
+        return n < size ? S_FALSE : S_OK;
+    }
+    STDMETHODIMP Seek(LARGE_INTEGER move, DWORD origin, ULARGE_INTEGER* newPos) override {
+        const LONGLONG base = origin == STREAM_SEEK_SET ? 0 : origin == STREAM_SEEK_CUR ? LONGLONG(pos_) : LONGLONG(data_.size());
+        const LONGLONG target = base + move.QuadPart;
+        if (target < 0) return STG_E_INVALIDFUNCTION;
+        pos_ = size_t(std::min<LONGLONG>(target, LONGLONG(data_.size())));
+        if (newPos) newPos->QuadPart = pos_;
+        return S_OK;
+    }
+    STDMETHODIMP Stat(STATSTG* stat, DWORD) override {
+        *stat = {};
+        stat->type = STGTY_STREAM;
+        stat->cbSize.QuadPart = data_.size();
+        return S_OK;
+    }
+    STDMETHODIMP Write(const void*, ULONG, ULONG*) override { return E_NOTIMPL; }
+    STDMETHODIMP SetSize(ULARGE_INTEGER) override { return E_NOTIMPL; }
+    STDMETHODIMP CopyTo(IStream*, ULARGE_INTEGER, ULARGE_INTEGER*, ULARGE_INTEGER*) override { return E_NOTIMPL; }
+    STDMETHODIMP Commit(DWORD) override { return S_OK; }
+    STDMETHODIMP Revert() override { return E_NOTIMPL; }
+    STDMETHODIMP LockRegion(ULARGE_INTEGER, ULARGE_INTEGER, DWORD) override { return E_NOTIMPL; }
+    STDMETHODIMP UnlockRegion(ULARGE_INTEGER, ULARGE_INTEGER, DWORD) override { return E_NOTIMPL; }
+    STDMETHODIMP Clone(IStream**) override { return E_NOTIMPL; }
+
+private:
+    ULONG refs_ = 1;
+    Bytes data_;
+    ULONG chunk_;
+    size_t pos_ = 0;
+};
+
+/// A 256x256 raw BGRA frame: 256 KB, far over one 64 KB read, with a gradient and varying alpha.
+static Bytes bigFrame() {
+    Bytes px;
+    px.reserve(256 * 256 * 4);
+    for (int y = 0; y < 256; ++y)
+        for (int x = 0; x < 256; ++x) px.insert(px.end(), {uint8_t(x), uint8_t(y), uint8_t(x ^ y), uint8_t(255 - y / 2)});
+    return fx::makeVBN(256, 256, 0x000, px);
+}
+
+static void checkDecoder(IWICImagingFactory* factory, IWICBitmapDecoder* decoder, const Bytes& file);
+
 /// Decodes `path` through WIC and compares every pixel with the portable decoder.
 static void checkThroughWIC(IWICImagingFactory* factory, const std::wstring& path, const Bytes& file, const char* label) {
     std::printf("-- %s\n", label);
@@ -50,7 +112,36 @@ static void checkThroughWIC(IWICImagingFactory* factory, const std::wstring& pat
                                                     &decoder);
     CHECK(SUCCEEDED(hr), "WIC finds a decoder");
     if (FAILED(hr)) { std::printf("     hr=0x%08lX\n", static_cast<unsigned long>(hr)); return; }
+    checkDecoder(factory, decoder.p, file);
+}
 
+/// Same, from a stream that returns at most `chunk` bytes per Read.
+static void checkThroughShortReads(IWICImagingFactory* factory, const Bytes& file, ULONG chunk, const char* label) {
+    std::printf("-- %s\n", label);
+    ShortReadStream* stream = new ShortReadStream(file, chunk);
+    Com<IWICBitmapDecoder> decoder;
+    const HRESULT hr = factory->CreateDecoderFromStream(stream, nullptr, WICDecodeMetadataCacheOnDemand, &decoder);
+    stream->Release();
+    CHECK(SUCCEEDED(hr), "WIC finds a decoder for the stream");
+    if (FAILED(hr)) { std::printf("     hr=0x%08lX\n", static_cast<unsigned long>(hr)); return; }
+    checkDecoder(factory, decoder.p, file);
+}
+
+/// The Explorer thumbnail path: the shell's thumbnail provider calling the codec in its own host.
+static void checkThumbnail(const std::wstring& path, const char* label) {
+    Com<IShellItemImageFactory> shellImage;
+    HRESULT hr = SHCreateItemFromParsingName(path.c_str(), nullptr, IID_PPV_ARGS(&shellImage));
+    if (SUCCEEDED(hr)) {
+        HBITMAP bitmap = nullptr;
+        hr = shellImage->GetImage(SIZE{96, 96}, SIIGBF_THUMBNAILONLY, &bitmap);
+        if (bitmap) DeleteObject(bitmap);
+    }
+    std::printf("     thumbnail hr=0x%08lX\n", static_cast<unsigned long>(hr));
+    CHECK(SUCCEEDED(hr), label);
+}
+
+static void checkDecoder(IWICImagingFactory* factory, IWICBitmapDecoder* decoder, const Bytes& file) {
+    HRESULT hr = S_OK;
     GUID container{};
     CHECK(SUCCEEDED(decoder->GetContainerFormat(&container)) && container == GUID_ContainerFormatVBN, "container is .vbn");
     UINT frames = 0;
@@ -89,7 +180,7 @@ static void checkThroughWIC(IWICImagingFactory* factory, const std::wstring& pat
     // What Explorer does next: convert to premultiplied BGRA for display.
     Com<IWICFormatConverter> converter;
     factory->CreateFormatConverter(&converter);
-    CHECK(SUCCEEDED(converter->Initialize(frame.p, GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0,
+    CHECK(SUCCEEDED(hr) && SUCCEEDED(converter->Initialize(frame.p, GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0,
                                           WICBitmapPaletteTypeCustom)),
           "converts to 32bpp PBGRA");
 }
@@ -124,6 +215,15 @@ int wmain(int argc, wchar_t** argv) {
             checkThroughWIC(factory.p, writeTemp(L"unvbn_wic_qlz.vbn", qlz), qlz, "QuickLZ + DXT5 8x4");
             // Found by its magic number even without the .vbn extension.
             checkThroughWIC(factory.p, writeTemp(L"unvbn_wic_noext.bin", raw), raw, "content sniffing (.bin)");
+            // Bigger than one 64 KB read, from a file and from a stream returning 1000 bytes per Read.
+            const Bytes big = bigFrame();
+            const std::wstring bigPath = writeTemp(L"unvbn_wic_big.vbn", big);
+            checkThroughWIC(factory.p, bigPath, big, "256x256 raw BGRA (256 KB)");
+            checkThroughShortReads(factory.p, big, 1000, "256 KB through 1000-byte reads");
+            checkThroughShortReads(factory.p, dxt, 7, "DXT5 through 7-byte reads (header split)");
+            std::printf("-- Explorer thumbnails\n");
+            checkThumbnail(rawPath, "thumbnail of a small file");
+            checkThumbnail(bigPath, "thumbnail of a 256 KB file");
 
             Com<IWICBitmapDecoder> decoder;
             const HRESULT hr = factory->CreateDecoderFromFilename(
@@ -131,15 +231,6 @@ int wmain(int argc, wchar_t** argv) {
                 nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder);
             CHECK(FAILED(hr), "corrupt / hostile file refused");
 
-            // Informational: the Explorer thumbnail path (can be unavailable on headless CI machines).
-            Com<IShellItemImageFactory> shellImage;
-            if (SUCCEEDED(SHCreateItemFromParsingName(rawPath.c_str(), nullptr, IID_PPV_ARGS(&shellImage)))) {
-                HBITMAP bitmap = nullptr;
-                const HRESULT th = shellImage->GetImage(SIZE{64, 64}, SIIGBF_THUMBNAILONLY, &bitmap);
-                std::printf("info Explorer thumbnail: %s (hr=0x%08lX)\n", SUCCEEDED(th) ? "produced" : "not produced",
-                            static_cast<unsigned long>(th));
-                if (bitmap) DeleteObject(bitmap);
-            }
         }
         result = failures ? 1 : 0;
         std::printf(failures ? "%d failure(s)\n" : "all WIC checks passed\n", failures);
