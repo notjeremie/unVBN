@@ -74,13 +74,14 @@ public struct VBNImage {
         }
 
         let w = header.width, h = header.height
-        var stored: [UInt8]
+        let stored: [UInt8]
         switch header.pixelFormat {
         case .dxt5:
             stored = try BC3.decode(payload, width: w, height: h)
         case .rgba8888:
             // Uncompressed pixels are stored R, G, B, A (verified on real files: a red logo decodes red).
-            stored = Array(payload[0 ..< w * h * 4])
+            // The flip below reads only the first w*h*4 bytes, which the size check above guarantees.
+            stored = payload
         }
 
         // Rows are stored bottom-up (OpenGL): flip.

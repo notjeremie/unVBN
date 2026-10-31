@@ -3,7 +3,6 @@
 #include "vbn_decode.h"
 
 #include <algorithm>
-#include <cstring>
 #include <new>
 #include <stdexcept>
 
@@ -20,7 +19,7 @@ struct Rgb { int r, g, b; };
 
 Rgb c565(int c) { return {((c >> 11) & 31) * 255 / 31, ((c >> 5) & 63) * 255 / 63, (c & 31) * 255 / 31}; }
 
-/// BC3 blocks -> BGRA, rows in stored (bottom-up) order.
+/// BC3 blocks -> BGRA, flipping rows from stored (bottom-up) to upright on the way.
 void decodeBC3(const uint8_t* data, uint32_t w, uint32_t h, uint8_t* out) {
     const uint32_t bw = (w + 3) / 4, bh = (h + 3) / 4;
     int al[8];
@@ -46,7 +45,7 @@ void decodeBC3(const uint8_t* data, uint32_t w, uint32_t h, uint8_t* out) {
             for (int j = 0; j < 16; ++j) {
                 const uint32_t x = bx * 4 + (j & 3), y = by * 4 + (j >> 2);
                 if (x >= w || y >= h) continue;
-                uint8_t* o = out + (size_t(y) * w + x) * 4;
+                uint8_t* o = out + (size_t(h - 1 - y) * w + x) * 4;
                 const Rgb& c = cl[(bits >> (2 * j)) & 3];
                 o[0] = uint8_t(c.b); o[1] = uint8_t(c.g); o[2] = uint8_t(c.r);
                 o[3] = uint8_t(al[(abits >> (3 * j)) & 7]);
@@ -160,23 +159,22 @@ bool decode(const uint8_t* data, size_t size, Image& image, std::string& error) 
         }
         if (available < need) { error = "truncated pixel data"; return false; }
 
+        // Rows are stored bottom-up (OpenGL): both paths write them straight into upright order.
         const uint32_t w = h.width, hh = h.height;
         const size_t row = size_t(w) * 4;
-        std::vector<uint8_t> stored(row * hh);
+        image.width = w; image.height = hh;
+        image.bgra.resize(row * hh);
         if (h.dxt5) {
-            decodeBC3(pixels, w, hh, stored.data());
+            decodeBC3(pixels, w, hh, image.bgra.data());
         } else {  // stored R, G, B, A -> B, G, R, A
-            for (size_t i = 0; i < stored.size(); i += 4) {
-                stored[i] = pixels[i + 2]; stored[i + 1] = pixels[i + 1];
-                stored[i + 2] = pixels[i]; stored[i + 3] = pixels[i + 3];
+            for (uint32_t y = 0; y < hh; ++y) {
+                const uint8_t* src = pixels + size_t(hh - 1 - y) * row;
+                uint8_t* dst = image.bgra.data() + size_t(y) * row;
+                for (size_t i = 0; i < row; i += 4) {
+                    dst[i] = src[i + 2]; dst[i + 1] = src[i + 1]; dst[i + 2] = src[i]; dst[i + 3] = src[i + 3];
+                }
             }
         }
-
-        // Rows are stored bottom-up (OpenGL): flip.
-        image.width = w; image.height = hh;
-        image.bgra.resize(stored.size());
-        for (uint32_t y = 0; y < hh; ++y)
-            std::memcpy(image.bgra.data() + y * row, stored.data() + (hh - 1 - y) * row, row);
         return true;
     } catch (const std::bad_alloc&) {
         error = "out of memory"; return false;

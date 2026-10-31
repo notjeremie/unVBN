@@ -11,6 +11,7 @@
 #include <thumbcache.h>
 #include <shobjidl.h>
 #include <wincodec.h>
+#include <wrl/client.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -32,13 +33,7 @@ static int failures = 0;
         else std::printf("ok   %s\n", msg);                                                    \
     } while (0)
 
-template <class T> struct Com {
-    T* p = nullptr;
-    ~Com() { if (p) p->Release(); }
-    T** operator&() { return &p; }
-    T* operator->() const { return p; }
-    explicit operator bool() const { return p != nullptr; }
-};
+template <class T> using Com = Microsoft::WRL::ComPtr<T>;
 
 static std::wstring writeTemp(const wchar_t* name, const Bytes& data) {
     wchar_t dir[MAX_PATH];
@@ -116,7 +111,7 @@ static void checkThroughWIC(IWICImagingFactory* factory, const std::wstring& pat
                                                     &decoder);
     CHECK(SUCCEEDED(hr), "WIC finds a decoder");
     if (FAILED(hr)) { std::printf("     hr=0x%08lX\n", static_cast<unsigned long>(hr)); return; }
-    checkDecoder(factory, decoder.p, file);
+    checkDecoder(factory, decoder.Get(), file);
 }
 
 /// Same, from a stream that returns at most `chunk` bytes per Read.
@@ -128,10 +123,10 @@ static void checkThroughShortReads(IWICImagingFactory* factory, const Bytes& fil
     stream->Release();
     CHECK(SUCCEEDED(hr), "WIC finds a decoder for the stream");
     if (FAILED(hr)) { std::printf("     hr=0x%08lX\n", static_cast<unsigned long>(hr)); return; }
-    checkDecoder(factory, decoder.p, file);
+    checkDecoder(factory, decoder.Get(), file);
 }
 
-/// The Explorer thumbnail path: the shell's thumbnail provider calling the codec in its own host.
+/// The Explorer thumbnail path end to end: the shell resolving .vbn to unVBN's thumbnail handler.
 static void checkThumbnail(const std::wstring& path, const char* label) {
     Com<IShellItemImageFactory> shellImage;
     HRESULT hr = SHCreateItemFromParsingName(path.c_str(), nullptr, IID_PPV_ARGS(&shellImage));
@@ -174,7 +169,6 @@ static void checkThumbnailHandler(const Bytes& big) {
 }
 
 static void checkDecoder(IWICImagingFactory* factory, IWICBitmapDecoder* decoder, const Bytes& file) {
-    HRESULT hr = S_OK;
     GUID container{};
     CHECK(SUCCEEDED(decoder->GetContainerFormat(&container)) && container == GUID_ContainerFormatVBN, "container is .vbn");
     UINT frames = 0;
@@ -212,8 +206,7 @@ static void checkDecoder(IWICImagingFactory* factory, IWICBitmapDecoder* decoder
 
     // What Explorer does next: convert to premultiplied BGRA for display.
     Com<IWICFormatConverter> converter;
-    factory->CreateFormatConverter(&converter);
-    CHECK(SUCCEEDED(hr) && SUCCEEDED(converter->Initialize(frame.p, GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0,
+    CHECK(SUCCEEDED(factory->CreateFormatConverter(&converter)) && SUCCEEDED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0,
                                           WICBitmapPaletteTypeCustom)),
           "converts to 32bpp PBGRA");
 }
@@ -244,19 +237,19 @@ int wmain(int argc, wchar_t** argv) {
             Com<IWICComponentInfo> info;
             CHECK(SUCCEEDED(factory->CreateComponentInfo(CLSID_UnVBNDecoder, &info)), "codec registered with WIC");
 
-            checkThroughWIC(factory.p, rawPath, raw, "raw RGBA 4x4");
+            checkThroughWIC(factory.Get(), rawPath, raw, "raw RGBA 4x4");
             const Bytes dxt = fx::makeVBN(8, 4, 0x003, fx::dxt8x4());
-            checkThroughWIC(factory.p, writeTemp(L"unvbn_wic_dxt5.vbn", dxt), dxt, "DXT5 8x4");
+            checkThroughWIC(factory.Get(), writeTemp(L"unvbn_wic_dxt5.vbn", dxt), dxt, "DXT5 8x4");
             const Bytes qlz = fx::makeVBN(8, 4, 0x103, fx::qlzAllLiterals(fx::dxt8x4()));
-            checkThroughWIC(factory.p, writeTemp(L"unvbn_wic_qlz.vbn", qlz), qlz, "QuickLZ + DXT5 8x4");
+            checkThroughWIC(factory.Get(), writeTemp(L"unvbn_wic_qlz.vbn", qlz), qlz, "QuickLZ + DXT5 8x4");
             // Found by its magic number even without the .vbn extension.
-            checkThroughWIC(factory.p, writeTemp(L"unvbn_wic_noext.bin", raw), raw, "content sniffing (.bin)");
+            checkThroughWIC(factory.Get(), writeTemp(L"unvbn_wic_noext.bin", raw), raw, "content sniffing (.bin)");
             // Bigger than one 64 KB read, from a file and from a stream returning 1000 bytes per Read.
             const Bytes big = bigFrame();
             const std::wstring bigPath = writeTemp(L"unvbn_wic_big.vbn", big);
-            checkThroughWIC(factory.p, bigPath, big, "256x256 raw RGBA (256 KB)");
-            checkThroughShortReads(factory.p, big, 1000, "256 KB through 1000-byte reads");
-            checkThroughShortReads(factory.p, dxt, 7, "DXT5 through 7-byte reads (header split)");
+            checkThroughWIC(factory.Get(), bigPath, big, "256x256 raw RGBA (256 KB)");
+            checkThroughShortReads(factory.Get(), big, 1000, "256 KB through 1000-byte reads");
+            checkThroughShortReads(factory.Get(), dxt, 7, "DXT5 through 7-byte reads (header split)");
             checkThumbnailHandler(big);
             wchar_t handler[64] = {};
             DWORD size = sizeof handler;

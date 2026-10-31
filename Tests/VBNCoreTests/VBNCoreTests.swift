@@ -16,7 +16,7 @@ final class VBNCoreTests: XCTestCase {
         } }
     }
 
-    // MARK: Raw BGRA
+    // MARK: Raw RGBA
 
     func testRawRGBA4x4IsUpright() throws {
         let img = try VBNImage.decodeRGBA(data: makeVBN(width: 4, height: 4, format: 0x000, payload: rgba4x4Stored))

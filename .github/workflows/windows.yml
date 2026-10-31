@@ -7,7 +7,7 @@ on:
     branches: [main]
     paths: ["windows/**", ".github/workflows/windows.yml", "project.yml", "FORMAT.md"]
   pull_request:
-    paths: ["windows/**", ".github/workflows/windows.yml"]
+    paths: ["windows/**", ".github/workflows/windows.yml", "project.yml", "FORMAT.md"]
   workflow_dispatch:
 
 permissions:
@@ -22,9 +22,16 @@ jobs:
           - arch: x64
             cmake_arch: x64
             runner: windows-latest
+            publish: true
           - arch: arm64
             cmake_arch: ARM64
             runner: windows-11-arm
+            publish: true
+          # Server 2022 has the Windows 10 shell: catches Windows 10-only Explorer behaviour (tested, not published).
+          - arch: x64
+            cmake_arch: x64
+            runner: windows-2022
+            publish: false
     runs-on: ${{ matrix.runner }}
     defaults:
       run:
@@ -100,6 +107,7 @@ jobs:
           if (Test-Path 'C:\Program Files\unVBN\unvbn_wic.dll') { throw "DLL left behind" }
 
       - uses: actions/upload-artifact@v4
+        if: matrix.publish
         with:
           name: unVBN-windows-${{ matrix.arch }}
           path: dist/*.msi

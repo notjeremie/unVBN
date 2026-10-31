@@ -34,12 +34,31 @@ std::atomic<long> g_locks{0};
 /// Header plus the largest legal uncompressed RGBA payload (16384 x 16384 x 4).
 constexpr ULONGLONG kMaxFileSize = vbn::kHeaderSize + ULONGLONG(vbn::kMaxDimension) * vbn::kMaxDimension * 4;
 
+using Microsoft::WRL::ComPtr;
+
+/// Shared COM lifetime for every object in this DLL: reference count, the DLL-wide object count used by
+/// DllCanUnloadNow, and deletion on the last Release. Subclasses only implement QueryInterface.
+template <class... Interfaces>
+class ComObject : public Interfaces... {
+public:
+    ComObject() { ++g_objects; }
+    virtual ~ComObject() { --g_objects; }
+    STDMETHODIMP_(ULONG) AddRef() override { return ++refs_; }
+    STDMETHODIMP_(ULONG) Release() override {
+        const ULONG n = --refs_;
+        if (n == 0) delete this;
+        return n;
+    }
+
+private:
+    std::atomic<ULONG> refs_{1};
+};
+
 // MARK: - Frame
 
-class Frame final : public IWICBitmapFrameDecode {
+class Frame final : public ComObject<IWICBitmapFrameDecode> {
 public:
-    explicit Frame(std::shared_ptr<const vbn::Image> image) : image_(std::move(image)) { ++g_objects; }
-    ~Frame() { --g_objects; }
+    explicit Frame(std::shared_ptr<const vbn::Image> image) : image_(std::move(image)) {}
 
     STDMETHODIMP QueryInterface(REFIID iid, void** out) override {
         if (!out) return E_POINTER;
@@ -50,12 +69,6 @@ public:
         }
         *out = nullptr;
         return E_NOINTERFACE;
-    }
-    STDMETHODIMP_(ULONG) AddRef() override { return ++refs_; }
-    STDMETHODIMP_(ULONG) Release() override {
-        const ULONG n = --refs_;
-        if (n == 0) delete this;
-        return n;
     }
 
     STDMETHODIMP GetSize(UINT* width, UINT* height) override {
@@ -108,7 +121,6 @@ public:
     }
 
 private:
-    std::atomic<ULONG> refs_{1};
     std::shared_ptr<const vbn::Image> image_;
 };
 
@@ -127,29 +139,40 @@ HRESULT readUpTo(IStream* stream, BYTE* buffer, ULONG size, ULONG& got) {
     return S_OK;
 }
 
-/// Reads the rest of `stream` (from its current position). Fails above kMaxFileSize.
-/// Streams may return fewer bytes than asked before the end (the Explorer thumbnail host does):
-/// only a read of 0 bytes means end of stream.
+/// Reads the rest of `stream` (from its current position) straight into `out`, sized from Stat when the
+/// stream reports one. Streams may return fewer bytes than asked before the end (the Explorer thumbnail
+/// host does), so all reads go through readUpTo. Fails above kMaxFileSize.
 HRESULT readAll(IStream* stream, std::vector<uint8_t>& out) {
     STATSTG stat{};
+    size_t capacity = 64 * 1024;
     if (SUCCEEDED(stream->Stat(&stat, STATFLAG_NONAME)) && stat.cbSize.QuadPart <= kMaxFileSize)
-        out.reserve(size_t(stat.cbSize.QuadPart));
-    BYTE chunk[64 * 1024];
+        capacity = std::max(capacity, size_t(stat.cbSize.QuadPart));
+    out.resize(capacity);
+    size_t used = 0;
     for (;;) {
+        if (used == out.size()) {  // full: grow only if the stream really has more
+            BYTE next = 0;
+            ULONG n = 0;
+            const HRESULT hr = readUpTo(stream, &next, 1, n);
+            if (FAILED(hr)) return hr;
+            if (n == 0) break;
+            if (out.size() >= kMaxFileSize) return WINCODEC_ERR_BADIMAGE;
+            out.resize(size_t(std::min<ULONGLONG>(ULONGLONG(out.size()) * 2, kMaxFileSize)));
+            out[used++] = next;
+        }
+        const ULONG want = ULONG(std::min<size_t>(out.size() - used, size_t(1) << 30));
         ULONG got = 0;
-        const HRESULT hr = stream->Read(chunk, sizeof chunk, &got);
+        const HRESULT hr = readUpTo(stream, out.data() + used, want, got);
         if (FAILED(hr)) return hr;
-        if (got == 0) return S_OK;
-        if (out.size() + got > kMaxFileSize) return WINCODEC_ERR_BADIMAGE;
-        out.insert(out.end(), chunk, chunk + got);
+        used += got;
+        if (got < want) break;  // readUpTo stops short only at the end of the stream
     }
+    out.resize(used);
+    return S_OK;
 }
 
-class Decoder final : public IWICBitmapDecoder {
+class Decoder final : public ComObject<IWICBitmapDecoder> {
 public:
-    Decoder() { ++g_objects; }
-    ~Decoder() { --g_objects; }
-
     STDMETHODIMP QueryInterface(REFIID iid, void** out) override {
         if (!out) return E_POINTER;
         if (iid == IID_IUnknown || iid == IID_IWICBitmapDecoder) {
@@ -159,12 +182,6 @@ public:
         }
         *out = nullptr;
         return E_NOINTERFACE;
-    }
-    STDMETHODIMP_(ULONG) AddRef() override { return ++refs_; }
-    STDMETHODIMP_(ULONG) Release() override {
-        const ULONG n = --refs_;
-        if (n == 0) delete this;
-        return n;
     }
 
     /// Looks at the header only and leaves the stream where it was.
@@ -218,16 +235,11 @@ public:
     STDMETHODIMP GetDecoderInfo(IWICBitmapDecoderInfo** info) override {
         if (!info) return E_INVALIDARG;
         *info = nullptr;
-        IWICImagingFactory* factory = nullptr;
+        ComPtr<IWICImagingFactory> factory;
         HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
-        if (FAILED(hr)) return hr;
-        IWICComponentInfo* component = nullptr;
-        hr = factory->CreateComponentInfo(CLSID_UnVBNDecoder, &component);
-        if (SUCCEEDED(hr)) {
-            hr = component->QueryInterface(IID_PPV_ARGS(info));
-            component->Release();
-        }
-        factory->Release();
+        ComPtr<IWICComponentInfo> component;
+        if (SUCCEEDED(hr)) hr = factory->CreateComponentInfo(CLSID_UnVBNDecoder, &component);
+        if (SUCCEEDED(hr)) hr = component->QueryInterface(IID_PPV_ARGS(info));
         return hr;
     }
 
@@ -273,32 +285,26 @@ public:
     }
 
 private:
-    std::atomic<ULONG> refs_{1};
     SRWLOCK lock_ = SRWLOCK_INIT;
     std::shared_ptr<const vbn::Image> image_;
 };
 
 // MARK: - Explorer thumbnail handler
 
-using Microsoft::WRL::ComPtr;
-
 /// Scales a decoded image to fit inside cx x cx (never upscaling) into a top-down premultiplied DIB.
-HRESULT makeThumbnail(const vbn::Image& image, UINT cx, HBITMAP* out) {
-    const double scale = std::min(1.0, double(cx) / double(std::max(image.width, image.height)));
-    const UINT w = std::max(1u, UINT(image.width * scale + 0.5)), h = std::max(1u, UINT(image.height * scale + 0.5));
+/// The image is read through a Frame, so the converter and scaler pull rows from it without a full copy.
+HRESULT makeThumbnail(std::shared_ptr<const vbn::Image> image, UINT cx, HBITMAP* out) {
+    const double scale = std::min(1.0, double(cx) / double(std::max(image->width, image->height)));
+    const UINT w = std::max(1u, UINT(image->width * scale + 0.5)), h = std::max(1u, UINT(image->height * scale + 0.5));
 
+    ComPtr<IWICBitmapSource> source;
+    source.Attach(new (std::nothrow) Frame(std::move(image)));
+    if (!source) return E_OUTOFMEMORY;
     ComPtr<IWICImagingFactory> factory;
     HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
-    ComPtr<IWICBitmap> source;
-    if (SUCCEEDED(hr))
-        hr = factory->CreateBitmapFromMemory(image.width, image.height, GUID_WICPixelFormat32bppBGRA, image.width * 4,
-                                             UINT(image.bgra.size()), const_cast<BYTE*>(image.bgra.data()), &source);
     // Premultiply first, then scale, so transparent edges don't bleed colour.
-    ComPtr<IWICFormatConverter> premultiplied;
-    if (SUCCEEDED(hr)) hr = factory->CreateFormatConverter(&premultiplied);
-    if (SUCCEEDED(hr))
-        hr = premultiplied->Initialize(source.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0,
-                                       WICBitmapPaletteTypeCustom);
+    ComPtr<IWICBitmapSource> premultiplied;
+    if (SUCCEEDED(hr)) hr = WICConvertBitmapSource(GUID_WICPixelFormat32bppPBGRA, source.Get(), &premultiplied);
     ComPtr<IWICBitmapScaler> scaler;
     if (SUCCEEDED(hr)) hr = factory->CreateBitmapScaler(&scaler);
     if (SUCCEEDED(hr)) hr = scaler->Initialize(premultiplied.Get(), w, h, WICBitmapInterpolationModeFant);
@@ -322,11 +328,8 @@ HRESULT makeThumbnail(const vbn::Image& image, UINT cx, HBITMAP* out) {
 
 /// Explorer's thumbnail handler for .vbn. Draws thumbnails itself rather than relying on the system's
 /// PhotoThumbnailProvider, which on Windows 10 does not use third-party WIC codecs.
-class ThumbnailProvider final : public IInitializeWithStream, public IThumbnailProvider {
+class ThumbnailProvider final : public ComObject<IInitializeWithStream, IThumbnailProvider> {
 public:
-    ThumbnailProvider() { ++g_objects; }
-    ~ThumbnailProvider() { --g_objects; }
-
     STDMETHODIMP QueryInterface(REFIID iid, void** out) override {
         if (!out) return E_POINTER;
         if (iid == IID_IUnknown || iid == IID_IInitializeWithStream) *out = static_cast<IInitializeWithStream*>(this);
@@ -334,12 +337,6 @@ public:
         else { *out = nullptr; return E_NOINTERFACE; }
         AddRef();
         return S_OK;
-    }
-    STDMETHODIMP_(ULONG) AddRef() override { return ++refs_; }
-    STDMETHODIMP_(ULONG) Release() override {
-        const ULONG n = --refs_;
-        if (n == 0) delete this;
-        return n;
     }
 
     STDMETHODIMP Initialize(IStream* stream, DWORD) override {
@@ -355,24 +352,26 @@ public:
     STDMETHODIMP GetThumbnail(UINT cx, HBITMAP* bitmap, WTS_ALPHATYPE* alpha) override {
         if (!bitmap || !alpha || cx == 0) return E_INVALIDARG;
         *bitmap = nullptr;
-        vbn::Image image;
-        std::string error;
-        if (!vbn::decode(data_.data(), data_.size(), image, error)) return WINCODEC_ERR_BADIMAGE;
-        *alpha = WTSAT_ARGB;
-        return makeThumbnail(image, cx, bitmap);
+        try {
+            auto image = std::make_shared<vbn::Image>();
+            std::string error;
+            if (!vbn::decode(data_.data(), data_.size(), *image, error)) return WINCODEC_ERR_BADIMAGE;
+            *alpha = WTSAT_ARGB;
+            return makeThumbnail(std::move(image), cx, bitmap);
+        } catch (const std::bad_alloc&) {
+            return E_OUTOFMEMORY;
+        }
     }
 
 private:
-    std::atomic<ULONG> refs_{1};
     std::vector<uint8_t> data_;
 };
 
 // MARK: - Class factory
 
-class Factory final : public IClassFactory {
+class Factory final : public ComObject<IClassFactory> {
 public:
-    explicit Factory(bool thumbnail) : thumbnail_(thumbnail) { ++g_objects; }
-    ~Factory() { --g_objects; }
+    explicit Factory(bool thumbnail) : thumbnail_(thumbnail) {}
 
     STDMETHODIMP QueryInterface(REFIID iid, void** out) override {
         if (!out) return E_POINTER;
@@ -383,12 +382,6 @@ public:
         }
         *out = nullptr;
         return E_NOINTERFACE;
-    }
-    STDMETHODIMP_(ULONG) AddRef() override { return ++refs_; }
-    STDMETHODIMP_(ULONG) Release() override {
-        const ULONG n = --refs_;
-        if (n == 0) delete this;
-        return n;
     }
 
     STDMETHODIMP CreateInstance(IUnknown* outer, REFIID iid, void** out) override {
@@ -408,7 +401,6 @@ public:
     }
 
 private:
-    std::atomic<ULONG> refs_{1};
     const bool thumbnail_;
 };
 
@@ -424,7 +416,6 @@ const std::wstring kExtKey = kClasses + L".vbn";
 const std::wstring kThumbnailKey = kExtKey + L"\\ShellEx\\{e357fccd-a995-4576-b01f-234630154e96}";
 const std::wstring kPreviewKey = kClasses + L"SystemFileAssociations\\.vbn\\ShellEx\\ContextMenuHandlers\\ShellImagePreview";
 const std::wstring kKindMapKey = L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\KindMap";
-const wchar_t* const kPhotoThumbnailProvider = L"{C7657C4A-9F68-40fa-A4DF-96BC08EB3551}";
 const std::wstring kThumbnailClsidKey = kClasses + L"CLSID\\" UNVBN_THUMBNAIL_CLSID_STR;
 const std::wstring kApprovedKey = L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Shell Extensions\\Approved";
 const wchar_t* const kPhotoViewerPreview = L"{FFE2A43C-56B9-4bf5-9A79-CC6D4285608A}";
@@ -452,21 +443,18 @@ bool readString(const std::wstring& path, const wchar_t* name, std::wstring& val
     return true;
 }
 
+bool readDword(const std::wstring& path, const wchar_t* name, DWORD& value) {
+    DWORD size = sizeof value;
+    return RegGetValueW(HKEY_LOCAL_MACHINE, path.c_str(), name, RRF_RT_REG_DWORD, nullptr, &value, &size) == ERROR_SUCCESS;
+}
+
+/// Creates the key if needed and sets the value (HKLM).
 HRESULT setValue(const std::wstring& path, const wchar_t* name, DWORD type, const void* data, DWORD size) {
-    HKEY key = nullptr;
-    LSTATUS s = RegCreateKeyExW(HKEY_LOCAL_MACHINE, path.c_str(), 0, nullptr, 0, KEY_WRITE, nullptr, &key, nullptr);
-    if (s != ERROR_SUCCESS) return check(s);
-    s = RegSetValueExW(key, name, 0, type, static_cast<const BYTE*>(data), size);
-    RegCloseKey(key);
-    return check(s);
+    return check(RegSetKeyValueW(HKEY_LOCAL_MACHINE, path.c_str(), name, type, data, size));
 }
 
-HRESULT setString(const std::wstring& path, const wchar_t* name, const std::wstring& value) {
-    return setValue(path, name, REG_SZ, value.c_str(), DWORD((value.size() + 1) * sizeof(wchar_t)));
-}
-
-HRESULT setExpandString(const std::wstring& path, const wchar_t* name, const std::wstring& value) {
-    return setValue(path, name, REG_EXPAND_SZ, value.c_str(), DWORD((value.size() + 1) * sizeof(wchar_t)));
+HRESULT setString(const std::wstring& path, const wchar_t* name, const std::wstring& value, DWORD type = REG_SZ) {
+    return setValue(path, name, type, value.c_str(), DWORD((value.size() + 1) * sizeof(wchar_t)));
 }
 
 HRESULT setDword(const std::wstring& path, const wchar_t* name, DWORD value) {
@@ -474,17 +462,13 @@ HRESULT setDword(const std::wstring& path, const wchar_t* name, DWORD value) {
 }
 
 HRESULT setBinary(const std::wstring& path, const wchar_t* name, std::initializer_list<BYTE> bytes) {
-    std::vector<BYTE> v(bytes);
-    return setValue(path, name, REG_BINARY, v.data(), DWORD(v.size()));
+    return setValue(path, name, REG_BINARY, bytes.begin(), DWORD(bytes.size()));
 }
 
 void deleteTree(const std::wstring& path) { RegDeleteTreeW(HKEY_LOCAL_MACHINE, path.c_str()); }
 
 void deleteValue(const std::wstring& path, const wchar_t* name) {
-    HKEY key = nullptr;
-    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, path.c_str(), 0, KEY_SET_VALUE, &key) != ERROR_SUCCESS) return;
-    RegDeleteValueW(key, name);
-    RegCloseKey(key);
+    RegDeleteKeyValueW(HKEY_LOCAL_MACHINE, path.c_str(), name);
 }
 
 /// Deletes `path` and then its parents up to (excluding) `stop`, as long as each is empty.
@@ -508,11 +492,6 @@ void deleteEmptyKeys(std::wstring path, const std::wstring& stop) {
         const HRESULT hr_ = (expr);      \
         if (FAILED(hr_)) return hr_;     \
     } while (0)
-
-bool readDword(const std::wstring& path, const wchar_t* name, DWORD& value) {
-    DWORD size = sizeof value;
-    return RegGetValueW(HKEY_LOCAL_MACHINE, path.c_str(), name, RRF_RT_REG_DWORD, nullptr, &value, &size) == ERROR_SUCCESS;
-}
 
 HRESULT registerThumbnailHandler(const std::wstring& dllPath) {
     TRY(setString(kThumbnailClsidKey, nullptr, L"unVBN thumbnail handler"));
@@ -564,9 +543,10 @@ HRESULT registerShell() {
     if (ExpandEnvironmentStringsW(L"%ProgramFiles%\\Windows Photo Viewer\\PhotoViewer.dll", viewer, MAX_PATH) &&
         GetFileAttributesW(viewer) != INVALID_FILE_ATTRIBUTES) {
         TRY(setString(kClasses + kProgId + L"\\shell\\open", nullptr, L"Open with Windows Photo Viewer"));
-        TRY(setExpandString(kClasses + kProgId + L"\\shell\\open\\command", nullptr,
-                            L"%SystemRoot%\\System32\\rundll32.exe \"%ProgramFiles%\\Windows Photo Viewer\\PhotoViewer.dll\", "
-                            L"ImageView_Fullscreen %1"));
+        TRY(setString(kClasses + kProgId + L"\\shell\\open\\command", nullptr,
+                      L"%SystemRoot%\\System32\\rundll32.exe \"%ProgramFiles%\\Windows Photo Viewer\\PhotoViewer.dll\", "
+                      L"ImageView_Fullscreen %1",
+                      REG_EXPAND_SZ));
     }
 
     std::wstring current;
@@ -577,18 +557,10 @@ HRESULT registerShell() {
     if (!readString(kExtKey, L"PerceivedType", current)) TRY(setString(kExtKey, L"PerceivedType", L"image"));
     TRY(setString(kExtKey + L"\\OpenWithProgids", kProgId.c_str(), L""));
     TRY(setString(kExtKey + L"\\OpenWithList\\PhotoViewer.dll", nullptr, L""));
-    // Thumbnails: our own handler, unless another program already owns the slot. A PhotoThumbnailProvider
-    // entry written by an earlier unVBN version (it does not draw .vbn on Windows 10) is replaced.
-    DWORD created = 0, added = 0;
-    readDword(kExtKey, kCreatedExtMarker, created);
-    readDword(kExtKey, kAddedThumbnailMarker, added);
-    bool takeThumbnail = !readString(kThumbnailKey, nullptr, current);
-    if (!takeThumbnail)
-        takeThumbnail = _wcsicmp(current.c_str(), UNVBN_THUMBNAIL_CLSID_STR) == 0 ||
-                        ((created || added) && _wcsicmp(current.c_str(), kPhotoThumbnailProvider) == 0);
-    if (takeThumbnail) {
+    // Thumbnails: our own handler, unless another program already owns the slot.
+    if (!readString(kThumbnailKey, nullptr, current) || _wcsicmp(current.c_str(), UNVBN_THUMBNAIL_CLSID_STR) == 0) {
         TRY(setString(kThumbnailKey, nullptr, UNVBN_THUMBNAIL_CLSID_STR));
-        if (!created) TRY(setDword(kExtKey, kAddedThumbnailMarker, 1));
+        if (extExisted) TRY(setDword(kExtKey, kAddedThumbnailMarker, 1));
     }
     TRY(setString(kPreviewKey, nullptr, kPhotoViewerPreview));
     TRY(setString(kKindMapKey, L".vbn", L"picture"));
@@ -596,11 +568,9 @@ HRESULT registerShell() {
 }
 
 void unregisterShell() {
-    DWORD created = 0, addedThumbnail = 0, size = sizeof(DWORD);
-    RegGetValueW(HKEY_LOCAL_MACHINE, kExtKey.c_str(), kCreatedExtMarker, RRF_RT_REG_DWORD, nullptr, &created, &size);
-    size = sizeof(DWORD);
-    RegGetValueW(HKEY_LOCAL_MACHINE, kExtKey.c_str(), kAddedThumbnailMarker, RRF_RT_REG_DWORD, nullptr, &addedThumbnail,
-                 &size);
+    DWORD created = 0, addedThumbnail = 0;
+    readDword(kExtKey, kCreatedExtMarker, created);
+    readDword(kExtKey, kAddedThumbnailMarker, addedThumbnail);
     if (created) {
         deleteTree(kExtKey);
     } else {
