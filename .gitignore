@@ -1,0 +1,8 @@
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.DS_Store
+# Real Vizrt samples belong to their owners: never commit them.
+*.vbn
+samples/
