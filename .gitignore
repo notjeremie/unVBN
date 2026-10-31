@@ -1,4 +1,9 @@
+# Kept out of iCloud Drive with the ".nosync" suffix; `build` is a symlink to build.nosync/
+# and `.git` is a file pointing to .git.nosync/.
+build
 build/
+build.nosync/
+.git.nosync/
 DerivedData/
 *.xcuserstate
 xcuserdata/
