@@ -368,6 +368,10 @@ HRESULT setString(const std::wstring& path, const wchar_t* name, const std::wstr
     return setValue(path, name, REG_SZ, value.c_str(), DWORD((value.size() + 1) * sizeof(wchar_t)));
 }
 
+HRESULT setExpandString(const std::wstring& path, const wchar_t* name, const std::wstring& value) {
+    return setValue(path, name, REG_EXPAND_SZ, value.c_str(), DWORD((value.size() + 1) * sizeof(wchar_t)));
+}
+
 HRESULT setDword(const std::wstring& path, const wchar_t* name, DWORD value) {
     return setValue(path, name, REG_DWORD, &value, sizeof value);
 }
@@ -443,6 +447,16 @@ HRESULT registerDecoder(const std::wstring& dllPath) {
 HRESULT registerShell() {
     TRY(setString(kClasses + kProgId, nullptr, L"Vizrt image"));
     TRY(setString(kClasses + kProgId, L"FriendlyTypeName", L"Vizrt image"));
+    // Double-click: Windows Photo Viewer (built into Windows 10/11, reads images through WIC, so it
+    // shows .vbn via this codec). Used only while .vbn has no default app the user picked.
+    wchar_t viewer[MAX_PATH];
+    if (ExpandEnvironmentStringsW(L"%ProgramFiles%\\Windows Photo Viewer\\PhotoViewer.dll", viewer, MAX_PATH) &&
+        GetFileAttributesW(viewer) != INVALID_FILE_ATTRIBUTES) {
+        TRY(setString(kClasses + kProgId + L"\\shell\\open", nullptr, L"Open with Windows Photo Viewer"));
+        TRY(setExpandString(kClasses + kProgId + L"\\shell\\open\\command", nullptr,
+                            L"%SystemRoot%\\System32\\rundll32.exe \"%ProgramFiles%\\Windows Photo Viewer\\PhotoViewer.dll\", "
+                            L"ImageView_Fullscreen %1"));
+    }
 
     std::wstring current;
     const bool extExisted = keyExists(kExtKey);

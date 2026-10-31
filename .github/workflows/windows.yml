@@ -56,10 +56,17 @@ jobs:
           if ($p.ExitCode) { throw "regsvr32 failed: $($p.ExitCode)" }
           build\Release\wic_test.exe
           if ($LASTEXITCODE) { throw "WIC tests failed" }
+          $cmdKey = 'Registry::HKEY_CLASSES_ROOT\unVBN.vbnfile\shell\open\command'
+          if (Test-Path "$env:ProgramFiles\Windows Photo Viewer\PhotoViewer.dll") {
+            $open = (Get-ItemProperty $cmdKey).'(default)'
+            Write-Host "double-click opens: $open"
+            if ($open -notlike '*PhotoViewer.dll*ImageView_Fullscreen %1') { throw "no open command for .vbn" }
+          } else { Write-Host "Windows Photo Viewer not present on this runner: no open command expected" }
           $p = Start-Process regsvr32 -ArgumentList '/s', '/u', "`"$dll`"" -Wait -PassThru
           if ($p.ExitCode) { throw "regsvr32 /u failed: $($p.ExitCode)" }
           build\Release\wic_test.exe --expect-missing
           if ($LASTEXITCODE) { throw "codec still registered after regsvr32 /u" }
+          if (Test-Path 'Registry::HKEY_CLASSES_ROOT\unVBN.vbnfile') { throw "ProgID left behind after regsvr32 /u" }
 
       - uses: actions/setup-dotnet@v4
         with:
