@@ -7,29 +7,76 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		02B3336C4457AFC1A757FD25 /* CoreVideo.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FB0FC1B90ED62B4D40E4C197 /* CoreVideo.framework */; };
 		05A2B0D7BB13D75562F36D46 /* VBNCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4E67DD554F581884EEFD3F27 /* VBNCore.framework */; };
 		12FCF516FEFD37A8ECFAF1C3 /* PreviewProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B938A42A67ED295705BB0C8 /* PreviewProvider.swift */; };
+		2363EC020F5A89A6D074D0EF /* CoreVideo.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FB0FC1B90ED62B4D40E4C197 /* CoreVideo.framework */; };
+		2B7883CD43D0A6059C3A39CA /* CoreVideo.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FB0FC1B90ED62B4D40E4C197 /* CoreVideo.framework */; };
 		32D08EBC5C6995BBDFA6D121 /* QuickLZ.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDFD9CDCB98B4BA436284D73 /* QuickLZ.swift */; };
+		3896FC29B7911BC184FE3249 /* SequenceExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 962D1DFDBCD4619A87F895D5 /* SequenceExporter.swift */; };
 		41F56EFECA41A6371FFA9D7A /* RealSampleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55BB1E9737DAC4E1E4048574 /* RealSampleTests.swift */; };
 		4392260E511209F4BB3B8CBB /* VBNImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2D1702412AE67745494D62C /* VBNImage.swift */; };
+		4FF3D47784A8E2A01FCFC178 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FD8F188EE7ED0F028C5E4889 /* AVFoundation.framework */; };
+		504B6E1D8FD9F1FB24FA5FFC /* VBNCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4E67DD554F581884EEFD3F27 /* VBNCore.framework */; };
+		58587123340A5EE87D9478E1 /* THIRD_PARTY_NOTICES.md in Resources */ = {isa = PBXBuildFile; fileRef = 2CD17D38136148B53F104548 /* THIRD_PARTY_NOTICES.md */; };
 		5F039F4F69D626D2AAE91E7D /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 577097005D9F67A827310A76 /* AppDelegate.swift */; };
+		66D40F8FA73FC16E62B53561 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FD8F188EE7ED0F028C5E4889 /* AVFoundation.framework */; };
+		6EA34D2DAA000C184E50962B /* ExportOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CB5E4F446DBA815E0876F7C /* ExportOptions.swift */; };
 		793AB4467020A6C54D4BB334 /* VBNCoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A162831A259A3DE3FBE02E6 /* VBNCoreTests.swift */; };
 		7AEBACCA1763822FA67D70B6 /* VBNCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4E67DD554F581884EEFD3F27 /* VBNCore.framework */; };
 		7E0F3FF6B612242F8024F2FE /* VBNCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4E67DD554F581884EEFD3F27 /* VBNCore.framework */; };
+		9106E7062D529F622C7F6854 /* VBNExport.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F66E6098A1A0343BCBD475B4 /* VBNExport.framework */; };
 		9671EB394502512195D6A322 /* VBNError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ACF574DAE661BB7ABAA2F04 /* VBNError.swift */; };
+		9BC5926DE89F24917E713C4C /* FrameSequence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20A2130D48E795AAF3C6E171 /* FrameSequence.swift */; };
+		9D3E4CAD0537C9B9C30F7680 /* VBNExport.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F66E6098A1A0343BCBD475B4 /* VBNExport.framework */; };
+		B3DCC3DCFC8E15710DC82D1F /* unvbn-cli in Embed Dependencies */ = {isa = PBXBuildFile; fileRef = 19D85E41050BF8410930FE5C /* unvbn-cli */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		C404416252D7589973307565 /* BC3.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3E55465079C543DE0627910 /* BC3.swift */; };
+		C91A36E8135E65171D3566BA /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED355F7EA6AE239F304E9492 /* main.swift */; };
+		D4C1FFD7F10152D94E880956 /* licenses in Resources */ = {isa = PBXBuildFile; fileRef = D7873FB51EC2BABE78EEBD3C /* licenses */; };
+		D7CA3C583BD4DEB102E0FACE /* VBNExport.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F66E6098A1A0343BCBD475B4 /* VBNExport.framework */; };
+		DBCF8518E35A89473864DC7E /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FD8F188EE7ED0F028C5E4889 /* AVFoundation.framework */; };
 		E196890269DAFEF739CBA626 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = EF4C34BB93E485699D0F2B20 /* Assets.xcassets */; };
 		E741D817AF7DC326171DEEA6 /* Fixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222F8E9C838017594237EB01 /* Fixtures.swift */; };
 		EA0AE5CF73B738565B64A6C0 /* unVBNPreview.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0B018F4C9C5A2A7682ED3B88 /* unVBNPreview.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		ED43F2A7DE7B27D43EFB2968 /* ThumbnailProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = E754C2BBD2E23A6C4B15D04C /* ThumbnailProvider.swift */; };
 		F177BD16B5935859EB95E066 /* Quartz.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D78435CA365A4AB267676107 /* Quartz.framework */; };
 		F3581E367E0D93D5E50AFCE6 /* unVBNThumbnail.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4E1BD674E0D9738C155EE568 /* unVBNThumbnail.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F4788FE5CF5BB08E319F4EAA /* ExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 095B1F0D123F2A410C0FD908 /* ExportTests.swift */; };
 		F4D3B426688F90CF1535A8CA /* VBNCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4E67DD554F581884EEFD3F27 /* VBNCore.framework */; };
 		F7F27085EA8071AF46F6F4DC /* QuickLookThumbnailing.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A0161DF04931C96BD59BB997 /* QuickLookThumbnailing.framework */; };
+		F98B4F45D263301A5CC94C66 /* ExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 523E7A6412C3C63274CBB283 /* ExportView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		180BF3913FC2F729F6739692 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EEB7E61D22DEAA401113177E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 513CD1331B9B3B56A494B304;
+			remoteInfo = "unvbn-cli";
+		};
+		4C572E61E70BB261A3BCA051 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EEB7E61D22DEAA401113177E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C25B62C2A8FD1BF537FFAF29;
+			remoteInfo = VBNCore;
+		};
 		50D198AA981A6964AC6E02CE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EEB7E61D22DEAA401113177E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C25B62C2A8FD1BF537FFAF29;
+			remoteInfo = VBNCore;
+		};
+		A7F8B1FEF20D2DD0C62B9885 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EEB7E61D22DEAA401113177E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7982F51A6B9CF4E888FD1F1B;
+			remoteInfo = VBNExport;
+		};
+		ACF3261F9684F94152140F64 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = EEB7E61D22DEAA401113177E /* Project object */;
 			proxyType = 1;
@@ -49,6 +96,20 @@
 			proxyType = 1;
 			remoteGlobalIDString = C25B62C2A8FD1BF537FFAF29;
 			remoteInfo = VBNCore;
+		};
+		E2180602F9943C2F055E0CEF /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EEB7E61D22DEAA401113177E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7982F51A6B9CF4E888FD1F1B;
+			remoteInfo = VBNExport;
+		};
+		E5546B69374E9504691B6A6E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EEB7E61D22DEAA401113177E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7982F51A6B9CF4E888FD1F1B;
+			remoteInfo = VBNExport;
 		};
 		E60E19CA18FE89826A42CCA6 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -74,6 +135,17 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		02E1AD1B37192AC743518844 /* Embed Dependencies */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Helpers;
+			dstSubfolderSpec = 1;
+			files = (
+				B3DCC3DCFC8E15710DC82D1F /* unvbn-cli in Embed Dependencies */,
+			);
+			name = "Embed Dependencies";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		5F7FF0EB1A416D9008B9E312 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -89,24 +161,36 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		095B1F0D123F2A410C0FD908 /* ExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportTests.swift; sourceTree = "<group>"; };
 		0B018F4C9C5A2A7682ED3B88 /* unVBNPreview.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = unVBNPreview.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		0CB5E4F446DBA815E0876F7C /* ExportOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportOptions.swift; sourceTree = "<group>"; };
 		18096D1A8244FA34EED5723B /* VBNCoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VBNCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		19D85E41050BF8410930FE5C /* unvbn-cli */ = {isa = PBXFileReference; includeInIndex = 0; path = "unvbn-cli"; sourceTree = BUILT_PRODUCTS_DIR; };
+		20A2130D48E795AAF3C6E171 /* FrameSequence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameSequence.swift; sourceTree = "<group>"; };
 		222F8E9C838017594237EB01 /* Fixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Fixtures.swift; sourceTree = "<group>"; };
 		2B938A42A67ED295705BB0C8 /* PreviewProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewProvider.swift; sourceTree = "<group>"; };
+		2CD17D38136148B53F104548 /* THIRD_PARTY_NOTICES.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = THIRD_PARTY_NOTICES.md; sourceTree = "<group>"; };
 		4A162831A259A3DE3FBE02E6 /* VBNCoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VBNCoreTests.swift; sourceTree = "<group>"; };
 		4E1BD674E0D9738C155EE568 /* unVBNThumbnail.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = unVBNThumbnail.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		4E67DD554F581884EEFD3F27 /* VBNCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = VBNCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		523E7A6412C3C63274CBB283 /* ExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportView.swift; sourceTree = "<group>"; };
 		55BB1E9737DAC4E1E4048574 /* RealSampleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealSampleTests.swift; sourceTree = "<group>"; };
 		577097005D9F67A827310A76 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		962D1DFDBCD4619A87F895D5 /* SequenceExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SequenceExporter.swift; sourceTree = "<group>"; };
 		9ACF574DAE661BB7ABAA2F04 /* VBNError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VBNError.swift; sourceTree = "<group>"; };
 		A0161DF04931C96BD59BB997 /* QuickLookThumbnailing.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuickLookThumbnailing.framework; path = System/Library/Frameworks/QuickLookThumbnailing.framework; sourceTree = SDKROOT; };
 		BDFD9CDCB98B4BA436284D73 /* QuickLZ.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickLZ.swift; sourceTree = "<group>"; };
 		D78435CA365A4AB267676107 /* Quartz.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Quartz.framework; path = System/Library/Frameworks/Quartz.framework; sourceTree = SDKROOT; };
+		D7873FB51EC2BABE78EEBD3C /* licenses */ = {isa = PBXFileReference; lastKnownFileType = folder; path = licenses; sourceTree = SOURCE_ROOT; };
 		E27E5A6BC2217EDF876A173A /* unVBN.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = unVBN.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E3E55465079C543DE0627910 /* BC3.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BC3.swift; sourceTree = "<group>"; };
 		E754C2BBD2E23A6C4B15D04C /* ThumbnailProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailProvider.swift; sourceTree = "<group>"; };
+		ED355F7EA6AE239F304E9492 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		EF4C34BB93E485699D0F2B20 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		F2D1702412AE67745494D62C /* VBNImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VBNImage.swift; sourceTree = "<group>"; };
+		F66E6098A1A0343BCBD475B4 /* VBNExport.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = VBNExport.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		FB0FC1B90ED62B4D40E4C197 /* CoreVideo.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreVideo.framework; path = System/Library/Frameworks/CoreVideo.framework; sourceTree = SDKROOT; };
+		FD8F188EE7ED0F028C5E4889 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -124,6 +208,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				7AEBACCA1763822FA67D70B6 /* VBNCore.framework in Frameworks */,
+				D7CA3C583BD4DEB102E0FACE /* VBNExport.framework in Frameworks */,
+				DBCF8518E35A89473864DC7E /* AVFoundation.framework in Frameworks */,
+				02B3336C4457AFC1A757FD25 /* CoreVideo.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -132,6 +219,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				05A2B0D7BB13D75562F36D46 /* VBNCore.framework in Frameworks */,
+				9D3E4CAD0537C9B9C30F7680 /* VBNExport.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -144,6 +232,26 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		717A8E6423AA67C601782069 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				504B6E1D8FD9F1FB24FA5FFC /* VBNCore.framework in Frameworks */,
+				9106E7062D529F622C7F6854 /* VBNExport.framework in Frameworks */,
+				66D40F8FA73FC16E62B53561 /* AVFoundation.framework in Frameworks */,
+				2363EC020F5A89A6D074D0EF /* CoreVideo.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ACBFBA4AB4C91A69C669AA22 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4FF3D47784A8E2A01FCFC178 /* AVFoundation.framework in Frameworks */,
+				2B7883CD43D0A6059C3A39CA /* CoreVideo.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -151,6 +259,7 @@
 			isa = PBXGroup;
 			children = (
 				BF21532C6653ACF893EC8868 /* VBNCoreTests */,
+				DF2AD0BA4D19CA8EF7CBB7E7 /* VBNExportTests */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -158,7 +267,10 @@
 		42453ED92C8E1CB7A685B78B = {
 			isa = PBXGroup;
 			children = (
+				D7873FB51EC2BABE78EEBD3C /* licenses */,
+				2CD17D38136148B53F104548 /* THIRD_PARTY_NOTICES.md */,
 				AFAC39C2FD33F45FBAB91BE9 /* App */,
+				6C87119FA68A2EDFEB9FE48F /* CLI */,
 				58949A5FCD13345861E26E48 /* Preview */,
 				9391BD7A6C2C8A56BA028C1B /* Sources */,
 				03635B4799EE0CDBEFE31D27 /* Tests */,
@@ -171,11 +283,13 @@
 		4528C0B8D31E69717BF86817 /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				19D85E41050BF8410930FE5C /* unvbn-cli */,
 				E27E5A6BC2217EDF876A173A /* unVBN.app */,
 				0B018F4C9C5A2A7682ED3B88 /* unVBNPreview.appex */,
 				4E1BD674E0D9738C155EE568 /* unVBNThumbnail.appex */,
 				4E67DD554F581884EEFD3F27 /* VBNCore.framework */,
 				18096D1A8244FA34EED5723B /* VBNCoreTests.xctest */,
+				F66E6098A1A0343BCBD475B4 /* VBNExport.framework */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -183,6 +297,8 @@
 		550C45E4BA8CDF97AAF79C0E /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				FD8F188EE7ED0F028C5E4889 /* AVFoundation.framework */,
+				FB0FC1B90ED62B4D40E4C197 /* CoreVideo.framework */,
 				D78435CA365A4AB267676107 /* Quartz.framework */,
 				A0161DF04931C96BD59BB997 /* QuickLookThumbnailing.framework */,
 			);
@@ -205,6 +321,14 @@
 			path = Thumbnail;
 			sourceTree = "<group>";
 		};
+		6C87119FA68A2EDFEB9FE48F /* CLI */ = {
+			isa = PBXGroup;
+			children = (
+				ED355F7EA6AE239F304E9492 /* main.swift */,
+			);
+			path = CLI;
+			sourceTree = "<group>";
+		};
 		760A079D5D50309230D6A9EE /* VBNCore */ = {
 			isa = PBXGroup;
 			children = (
@@ -216,10 +340,21 @@
 			path = VBNCore;
 			sourceTree = "<group>";
 		};
+		92E243AE827C4C64D04CEE16 /* VBNExport */ = {
+			isa = PBXGroup;
+			children = (
+				0CB5E4F446DBA815E0876F7C /* ExportOptions.swift */,
+				20A2130D48E795AAF3C6E171 /* FrameSequence.swift */,
+				962D1DFDBCD4619A87F895D5 /* SequenceExporter.swift */,
+			);
+			path = VBNExport;
+			sourceTree = "<group>";
+		};
 		9391BD7A6C2C8A56BA028C1B /* Sources */ = {
 			isa = PBXGroup;
 			children = (
 				760A079D5D50309230D6A9EE /* VBNCore */,
+				92E243AE827C4C64D04CEE16 /* VBNExport */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -229,6 +364,7 @@
 			children = (
 				577097005D9F67A827310A76 /* AppDelegate.swift */,
 				EF4C34BB93E485699D0F2B20 /* Assets.xcassets */,
+				523E7A6412C3C63274CBB283 /* ExportView.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -241,6 +377,14 @@
 				4A162831A259A3DE3FBE02E6 /* VBNCoreTests.swift */,
 			);
 			path = VBNCoreTests;
+			sourceTree = "<group>";
+		};
+		DF2AD0BA4D19CA8EF7CBB7E7 /* VBNExportTests */ = {
+			isa = PBXGroup;
+			children = (
+				095B1F0D123F2A410C0FD908 /* ExportTests.swift */,
+			);
+			path = VBNExportTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -257,6 +401,7 @@
 			);
 			dependencies = (
 				260D2A0D7D7E99EC59048451 /* PBXTargetDependency */,
+				DC9E19133F8CEC906E0B6DD2 /* PBXTargetDependency */,
 			);
 			name = VBNCoreTests;
 			packageProductDependencies = (
@@ -264,6 +409,45 @@
 			productName = VBNCoreTests;
 			productReference = 18096D1A8244FA34EED5723B /* VBNCoreTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		513CD1331B9B3B56A494B304 /* unvbn-cli */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CF84A09A3A9A7A9768ABD1F0 /* Build configuration list for PBXNativeTarget "unvbn-cli" */;
+			buildPhases = (
+				B97D7ED2964597A43F4B7923 /* Sources */,
+				717A8E6423AA67C601782069 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				EF641301CFAC0D4D5042A9F0 /* PBXTargetDependency */,
+				110EEDD2F3AED1503121C74E /* PBXTargetDependency */,
+			);
+			name = "unvbn-cli";
+			packageProductDependencies = (
+			);
+			productName = "unvbn-cli";
+			productReference = 19D85E41050BF8410930FE5C /* unvbn-cli */;
+			productType = "com.apple.product-type.tool";
+		};
+		7982F51A6B9CF4E888FD1F1B /* VBNExport */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EDE7EFDFA70A13A4B781EEF8 /* Build configuration list for PBXNativeTarget "VBNExport" */;
+			buildPhases = (
+				E09D8639F6144BFAE93EB7E0 /* Sources */,
+				ACBFBA4AB4C91A69C669AA22 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				8CB56AF528F00001A4ADD92D /* PBXTargetDependency */,
+			);
+			name = VBNExport;
+			packageProductDependencies = (
+			);
+			productName = VBNExport;
+			productReference = F66E6098A1A0343BCBD475B4 /* VBNExport.framework */;
+			productType = "com.apple.product-type.framework.static";
 		};
 		C25B62C2A8FD1BF537FFAF29 /* VBNCore */ = {
 			isa = PBXNativeTarget;
@@ -309,11 +493,15 @@
 				2CC8118AE94074EA248E5F8A /* Resources */,
 				57F1516F8CE87854FAF588C6 /* Frameworks */,
 				5F7FF0EB1A416D9008B9E312 /* Embed Foundation Extensions */,
+				02E1AD1B37192AC743518844 /* Embed Dependencies */,
+				3C60D611715CA33373BEB25B /* Embed ffmpeg */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				8D2271238C6CB09A358FAD2D /* PBXTargetDependency */,
+				814ECE84108F95969EA59DA6 /* PBXTargetDependency */,
+				7094B5233B3DD24D771B3156 /* PBXTargetDependency */,
 				03989BEE5212E561BBC243F8 /* PBXTargetDependency */,
 				433930C980D3F1598E730E5D /* PBXTargetDependency */,
 			);
@@ -356,6 +544,14 @@
 						DevelopmentTeam = "";
 						ProvisioningStyle = Manual;
 					};
+					513CD1331B9B3B56A494B304 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Manual;
+					};
+					7982F51A6B9CF4E888FD1F1B = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Manual;
+					};
 					C25B62C2A8FD1BF537FFAF29 = {
 						DevelopmentTeam = "";
 						ProvisioningStyle = Manual;
@@ -389,6 +585,8 @@
 			projectRoot = "";
 			targets = (
 				C25B62C2A8FD1BF537FFAF29 /* VBNCore */,
+				7982F51A6B9CF4E888FD1F1B /* VBNExport */,
+				513CD1331B9B3B56A494B304 /* unvbn-cli */,
 				DD651CD2287C0EED7971C0FD /* unVBN */,
 				D9AA31A42592950A0A8A5746 /* unVBNPreview */,
 				E3CE84A75FF6BC15A260E54A /* unVBNThumbnail */,
@@ -403,10 +601,34 @@
 			buildActionMask = 2147483647;
 			files = (
 				E196890269DAFEF739CBA626 /* Assets.xcassets in Resources */,
+				58587123340A5EE87D9478E1 /* THIRD_PARTY_NOTICES.md in Resources */,
+				D4C1FFD7F10152D94E880956 /* licenses in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		3C60D611715CA33373BEB25B /* Embed ffmpeg */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Embed ffmpeg";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "src=\"$PROJECT_DIR/build/ffmpeg/ffmpeg\"\ndst=\"$TARGET_BUILD_DIR/$WRAPPER_NAME/Contents/Helpers\"\nif [ ! -x \"$src\" ]; then\n  echo \"warning: build/ffmpeg/ffmpeg not found (run scripts/build-ffmpeg.sh): WebM export will be unavailable\"\n  exit 0\nfi\nmkdir -p \"$dst\"\nditto \"$src\" \"$dst/ffmpeg\"\nxattr -c \"$dst/ffmpeg\"\nruntime=\"\"; [ \"${ENABLE_HARDENED_RUNTIME:-NO}\" = YES ] && runtime=\"--options runtime\"\ncodesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY:--}\" --identifier com.notjeremie.unvbn.ffmpeg $runtime ${OTHER_CODE_SIGN_FLAGS:-} \"$dst/ffmpeg\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		0D50F20E3D13B4BE6DCCF7AB /* Sources */ = {
@@ -414,6 +636,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5F039F4F69D626D2AAE91E7D /* AppDelegate.swift in Sources */,
+				F98B4F45D263301A5CC94C66 /* ExportView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -432,6 +655,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F4788FE5CF5BB08E319F4EAA /* ExportTests.swift in Sources */,
 				E741D817AF7DC326171DEEA6 /* Fixtures.swift in Sources */,
 				41F56EFECA41A6371FFA9D7A /* RealSampleTests.swift in Sources */,
 				793AB4467020A6C54D4BB334 /* VBNCoreTests.swift in Sources */,
@@ -443,6 +667,24 @@
 			buildActionMask = 2147483647;
 			files = (
 				ED43F2A7DE7B27D43EFB2968 /* ThumbnailProvider.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B97D7ED2964597A43F4B7923 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C91A36E8135E65171D3566BA /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E09D8639F6144BFAE93EB7E0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6EA34D2DAA000C184E50962B /* ExportOptions.swift in Sources */,
+				9BC5926DE89F24917E713C4C /* FrameSequence.swift in Sources */,
+				3896FC29B7911BC184FE3249 /* SequenceExporter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -462,6 +704,11 @@
 			target = D9AA31A42592950A0A8A5746 /* unVBNPreview */;
 			targetProxy = E9401DC0C0F3A65B5EE87018 /* PBXContainerItemProxy */;
 		};
+		110EEDD2F3AED1503121C74E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7982F51A6B9CF4E888FD1F1B /* VBNExport */;
+			targetProxy = E2180602F9943C2F055E0CEF /* PBXContainerItemProxy */;
+		};
 		260D2A0D7D7E99EC59048451 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = C25B62C2A8FD1BF537FFAF29 /* VBNCore */;
@@ -471,6 +718,21 @@
 			isa = PBXTargetDependency;
 			target = E3CE84A75FF6BC15A260E54A /* unVBNThumbnail */;
 			targetProxy = E60E19CA18FE89826A42CCA6 /* PBXContainerItemProxy */;
+		};
+		7094B5233B3DD24D771B3156 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 513CD1331B9B3B56A494B304 /* unvbn-cli */;
+			targetProxy = 180BF3913FC2F729F6739692 /* PBXContainerItemProxy */;
+		};
+		814ECE84108F95969EA59DA6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7982F51A6B9CF4E888FD1F1B /* VBNExport */;
+			targetProxy = A7F8B1FEF20D2DD0C62B9885 /* PBXContainerItemProxy */;
+		};
+		8CB56AF528F00001A4ADD92D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C25B62C2A8FD1BF537FFAF29 /* VBNCore */;
+			targetProxy = ACF3261F9684F94152140F64 /* PBXContainerItemProxy */;
 		};
 		8D2271238C6CB09A358FAD2D /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -487,9 +749,34 @@
 			target = C25B62C2A8FD1BF537FFAF29 /* VBNCore */;
 			targetProxy = 50D198AA981A6964AC6E02CE /* PBXContainerItemProxy */;
 		};
+		DC9E19133F8CEC906E0B6DD2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7982F51A6B9CF4E888FD1F1B /* VBNExport */;
+			targetProxy = E5546B69374E9504691B6A6E /* PBXContainerItemProxy */;
+		};
+		EF641301CFAC0D4D5042A9F0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C25B62C2A8FD1BF537FFAF29 /* VBNCore */;
+			targetProxy = 4C572E61E70BB261A3BCA051 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		188E4B2810439EA84D043417 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.notjeremie.unvbn.cli;
+				PRODUCT_NAME = unvbn;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
 		26515E79C3EF3046F1DABD63 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -528,6 +815,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -537,6 +825,29 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.notjeremie.unvbn;
 				PRODUCT_NAME = unVBN;
 				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		54290A745D891F6577A31F97 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				GENERATE_INFOPLIST_FILE = YES;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.notjeremie.unvbn.export;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Release;
 		};
@@ -638,7 +949,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1;
+				MARKETING_VERSION = 0.2;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -655,6 +966,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -664,6 +976,21 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.notjeremie.unvbn;
 				PRODUCT_NAME = unVBN;
 				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		9BEC760FCD802C2D51C970EC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.notjeremie.unvbn.cli;
+				PRODUCT_NAME = unvbn;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
 			};
 			name = Debug;
 		};
@@ -681,6 +1008,29 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.notjeremie.unvbn.thumbnail;
 				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		BC940FE9EAC72F8F491E7567 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				GENERATE_INFOPLIST_FILE = YES;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.notjeremie.unvbn.export;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Debug;
 		};
@@ -792,7 +1142,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 0.1;
+				MARKETING_VERSION = 0.2;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -842,6 +1192,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		CF84A09A3A9A7A9768ABD1F0 /* Build configuration list for PBXNativeTarget "unvbn-cli" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9BEC760FCD802C2D51C970EC /* Debug */,
+				188E4B2810439EA84D043417 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		D9B5FD7E63F832E400073EEB /* Build configuration list for PBXNativeTarget "VBNCore" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -856,6 +1215,15 @@
 			buildConfigurations = (
 				7066B4F12E24CCCE06E29F08 /* Debug */,
 				EB858EB44067B852FBD44967 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		EDE7EFDFA70A13A4B781EEF8 /* Build configuration list for PBXNativeTarget "VBNExport" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BC940FE9EAC72F8F491E7567 /* Debug */,
+				54290A745D891F6577A31F97 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

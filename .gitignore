@@ -7,3 +7,7 @@ xcuserdata/
 *.vbn
 samples/
 HANDOFF.md
+# iCloud Drive conflict copies ("NAME 2.ext"): never commit
+* [0-9].*
+* [0-9]/
+reference/__pycache__/

@@ -2,8 +2,10 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 import VBNCore
+import VBNExport
 
 @main
+@MainActor
 enum Main {
     static let delegate = AppDelegate()
     static func main() {
@@ -18,9 +20,11 @@ extension UTType {
     static let vbn = UTType(importedAs: "com.vizrt.vbn", conformingTo: .image)
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
     private var openedFiles = false
+    private lazy var exportModel = ExportModel()
     /// The last .vbn opened, for "Export PNG...".
     private(set) var lastOpened: URL?
 
@@ -42,9 +46,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    /// Files open in Preview (double-click); a folder dropped on the Dock icon opens the sequence exporter.
     func application(_ application: NSApplication, open urls: [URL]) {
         openedFiles = true
-        for url in urls { openInPreview(url) }
+        for url in urls {
+            if url.hasDirectoryPath { showExporter(for: url) } else { openInPreview(url) }
+        }
+    }
+
+    func showExporter(for url: URL) {
+        exportModel.load(url)
+        showWindow()
     }
 
     // MARK: - Convert and open
@@ -110,6 +122,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc func exportSequence(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.allowedContentTypes = [.vbn, .folder]
+        panel.message = "Choose a folder of .vbn frames, or any frame of the sequence."
+        panel.prompt = "Choose"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        showExporter(for: url)
+    }
+
     @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
         item.action == #selector(exportPNG(_:)) ? lastOpened != nil : true
     }
@@ -118,14 +140,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showWindow() {
         if window == nil {
-            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 220),
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 400),
                              styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
             w.title = "unVBN"
             w.isReleasedWhenClosed = false
-            w.contentView = NSHostingView(rootView: WelcomeView(
-                open: { [weak self] in self?.openDocument(nil) },
-                export: { [weak self] in self?.exportPNG(nil) },
-                canExport: { [weak self] in self?.lastOpened != nil }
+            w.contentView = NSHostingView(rootView: MainView(
+                model: exportModel,
+                openFile: { [weak self] in self?.openDocument(nil) },
+                exportPNG: { [weak self] in self?.exportPNG(nil) },
+                canExportPNG: { [weak self] in self?.lastOpened != nil }
             ))
             w.center()
             window = w
@@ -150,36 +173,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let fileMenu = NSMenu(title: "File")
         fileMenu.addItem(withTitle: "Open .vbn\u{2026}", action: #selector(openDocument(_:)), keyEquivalent: "o").target = self
         fileMenu.addItem(withTitle: "Export PNG\u{2026}", action: #selector(exportPNG(_:)), keyEquivalent: "e").target = self
+        fileMenu.addItem(withTitle: "Export Sequence\u{2026}", action: #selector(exportSequence(_:)), keyEquivalent: "E").target = self
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         fileItem.submenu = fileMenu
         main.addItem(fileItem)
 
         return main
-    }
-}
-
-struct WelcomeView: View {
-    let open: () -> Void
-    let export: () -> Void
-    let canExport: () -> Bool
-    @State private var refresh = 0
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Vizrt .vbn viewer").font(.headline)
-            Text("Double-click a .vbn file to open it in Preview as a PNG. Space bar in Finder shows a Quick Look preview, and Finder draws thumbnails. This window only appears when unVBN is launched on its own.")
-                .fixedSize(horizontal: false, vertical: true)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
-            HStack {
-                Button("Open .vbn\u{2026}", action: open).keyboardShortcut(.defaultAction)
-                Button("Export PNG\u{2026}", action: export).disabled(!canExport())
-            }
-        }
-        .padding(20)
-        .frame(width: 420, height: 220, alignment: .topLeading)
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in refresh += 1 }
-        .id(refresh)
     }
 }

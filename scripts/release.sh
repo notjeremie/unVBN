@@ -22,6 +22,7 @@ DMG="$WORK/unVBN-$VERSION.dmg"
 IDENTITY="Developer ID Application"
 
 command -v xcodegen >/dev/null && xcodegen generate >/dev/null
+scripts/build-ffmpeg.sh   # cached; the app embeds build/ffmpeg/ffmpeg for WebM export
 rm -rf "$WORK" "$OUT"; mkdir -p "$WORK" "$OUT"
 
 echo "==> build $VERSION (Release, $IDENTITY, hardened runtime)"
@@ -36,6 +37,12 @@ codesign --verify --deep --strict --verbose=2 "$WORK/$APP"
 if codesign -d --entitlements - "$WORK/$APP" 2>/dev/null | grep -q get-task-allow; then
   echo "get-task-allow present: refusing to ship a debuggable build" >&2; exit 1
 fi
+for helper in ffmpeg unvbn; do
+  bin="$WORK/$APP/Contents/Helpers/$helper"
+  [ -x "$bin" ] || { echo "missing Contents/Helpers/$helper" >&2; exit 1; }
+  codesign -dv "$bin" 2>&1 | grep -q "TeamIdentifier=$TEAM_ID" || { echo "$helper not signed by $TEAM_ID" >&2; exit 1; }
+  codesign -dv "$bin" 2>&1 | grep -q "flags=.*runtime" || { echo "$helper lacks the hardened runtime" >&2; exit 1; }
+done
 
 echo "==> dmg"
 STAGE="$WORK/dmg"; mkdir -p "$STAGE"

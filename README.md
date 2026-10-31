@@ -7,8 +7,10 @@ A small macOS app that makes Vizrt Viz Artist / Viz Engine `.vbn` image files vi
 - **Quick Look preview** (space bar in Finder)
 - **Finder thumbnails**
 - **Double-click → opens as a PNG in Preview (Aperçu)**, plus *File > Export PNG…* for the last file opened
+- **Sequence export**: an animation stored as `NAME_00000.vbn` … `NAME_00749.vbn` becomes a **PNG sequence**,
+  **MP4** (H.264), **WebM** (VP9 with alpha) or **MOV** (ProRes 4444 with alpha), at 50 fps by default.
+  From the app window or the `unvbn` command-line tool.
 
-Single images only. Sequences (`NAME_00000.vbn` … `NAME_00749.vbn`) are opened frame by frame; there is no playback yet.
 The format itself is documented in [`FORMAT.md`](FORMAT.md). The Python reference decoder is in `reference/`.
 
 ## Install
@@ -20,6 +22,33 @@ scripts/install.sh          # builds Release, copies unVBN.app to ~/Applications
 To do it by hand, copy `unVBN.app` to `~/Applications/`, launch it once, then run `qlmanage -r`. Launching
 the app registers the `.vbn` type and the two Quick Look extensions (`pluginkit -m -v | grep -i vbn`
 should list `com.notjeremie.unvbn.preview` and `com.notjeremie.unvbn.thumbnail`).
+
+## Exporting sequences
+
+**In the app**: drop a folder of frames (or any one frame) on the unVBN window or Dock icon, or use
+*File > Export Sequence…* (⇧⌘E). Pick the format and frame rate, then *Export…*. A folder holding several
+sequences offers a picker.
+
+**On the command line**: the tool is inside the app. Link it once:
+
+```sh
+ln -s ~/Applications/unVBN.app/Contents/Helpers/unvbn /usr/local/bin/unvbn   # or any folder on your PATH
+unvbn info LOGO_FOLDER/                       # name, frame count, size, missing frames
+unvbn LOGO_FOLDER/ -f webm                    # -> LOGO.webm next to the folder
+unvbn LOGO_00000.vbn -f prores --fps 25 -o logo.mov
+unvbn ALL_LOGOS/ -f png                       # every sequence in the folder -> NAME_png/ folders
+unvbn LOGO_FOLDER/ -f mp4 --background '#FFFFFF'
+```
+
+| Format | Alpha | Notes |
+|---|---|---|
+| `png` | yes | One PNG per frame, same names as the source frames. |
+| `mp4` | no | H.264, BT.709. Transparency is flattened onto `--background` (black by default). Odd sizes are padded by 1 px. |
+| `webm` | yes | VP9 `yuva420p`, `--crf` 30 by default (0 best … 63). Plays with transparency in Chrome and Firefox. |
+| `prores` | yes | ProRes 4444 `.mov`, straight (unpremultiplied) alpha, BT.709. For editing and playout. Large files. |
+
+Frames are numbered by the digits at the end of their names. Gaps in the numbering are reported and skipped,
+and every frame must have the same size.
 
 ## How it works
 
@@ -42,15 +71,22 @@ declaration gives way to Vizrt's own if one is ever installed.
 | Target | What |
 |---|---|
 | `VBNCore` | Static framework: `VBNImage.decode(data:) -> CGImage` (upright, non-premultiplied alpha), `VBNImage.decodeRGBA`, `pngData`, `QuickLZ` (1.5 level 3), `BC3` (DXT5). Linked statically into each target, so there is no embedded framework to sign. |
-| `unVBN` | Host app (AppKit plus a small SwiftUI view), `App/`. |
+| `VBNExport` | Static framework: `FrameSequence` (finds and orders frames), `SequenceExporter` (PNG / AVAssetWriter H.264 and ProRes / ffmpeg pipe for WebM). |
+| `unVBN` | Host app (AppKit plus SwiftUI), `App/`. Embeds `unvbn` and `ffmpeg` in `Contents/Helpers/`. |
+| `unvbn-cli` | The `unvbn` command-line tool, `CLI/`. (The target name differs from the app's by more than case: on a case-insensitive disk they would share build folders.) |
 | `unVBNPreview` | Quick Look preview extension, `Preview/`. Sandboxed, as Quick Look requires. |
 | `unVBNThumbnail` | Quick Look thumbnail extension, `Thumbnail/`. Sandboxed. |
-| `VBNCoreTests` | Unit tests, `Tests/VBNCoreTests/`. |
+| `VBNCoreTests` | Unit tests, `Tests/VBNCoreTests/` and `Tests/VBNExportTests/`. |
 
 Deployment target: macOS 14. This is the oldest version still getting security updates. The APIs used
 need macOS 12 or later (`QLPreviewReply`, data-based previews).
 
 ## Build and test
+
+WebM export uses a minimal ffmpeg (LGPL, libvpx linked statically, universal) that unVBN bundles.
+Build it once with `scripts/build-ffmpeg.sh` (downloads pinned, checksummed ffmpeg and libvpx sources;
+about a minute; output in `build/ffmpeg/`). Without it the app still builds, and WebM falls back to a
+Homebrew ffmpeg if there is one. `UNVBN_FFMPEG=/path/to/ffmpeg` overrides the choice.
 
 `project.yml` is the source of truth. `unVBN.xcodeproj` is generated with [XcodeGen](https://github.com/yonaskolb/XcodeGen)
 and committed, so the project opens without XcodeGen. After editing `project.yml`, run `xcodegen generate` and commit both.
@@ -108,3 +144,6 @@ The app icon is drawn in code: `scripts/make-icon.sh` runs `scripts/make-icon.sw
 
 [MIT](LICENSE). Vizrt and Viz Artist / Viz Engine are trademarks of Vizrt; this project is not affiliated
 with Vizrt. The format was documented by reading files, for interoperability.
+
+The bundled ffmpeg is LGPL-2.1-or-later and libvpx is BSD-3-Clause: see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) (also inside the app, in `Contents/Resources/`).
