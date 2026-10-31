@@ -68,8 +68,9 @@ jobs:
       - name: Build MSI
         run: |
           dotnet tool install --global wix --version 4.0.5
+          wix extension add --global WixToolset.UI.wixext/4.0.5
           New-Item -ItemType Directory -Force dist | Out-Null
-          wix build windows/installer/unVBN.wxs -arch ${{ matrix.arch }} `
+          wix build windows/installer/unVBN.wxs -arch ${{ matrix.arch }} -ext WixToolset.UI.wixext `
             -d Version=$env:VERSION -d DllPath=build\Release\unvbn_wic.dll -d RepoRoot="$PWD" `
             -o "dist\unVBN-windows-$env:VERSION-${{ matrix.arch }}.msi"
           if ($LASTEXITCODE) { throw "wix build failed" }

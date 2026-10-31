@@ -4,7 +4,8 @@
   Registration: the DLL's own DllRegisterServer/DllUnregisterServer (SelfReg), the single source of truth
   for its registry entries, also used by `regsvr32`.
 -->
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package Name="unVBN (Vizrt .vbn images for Windows)"
            Manufacturer="unVBN"
            Version="$(var.Version)"
@@ -12,7 +13,7 @@
            Scope="perMachine"
            Compressed="yes">
     <SummaryInformation Description="Lets Windows open Vizrt Viz Artist / Viz Engine .vbn images" />
-    <MajorUpgrade DowngradeErrorMessage="A newer version of unVBN is already installed." />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of unVBN is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/notjeremie/unVBN" />
@@ -29,6 +30,12 @@
         </Component>
       </Directory>
     </StandardDirectory>
+
+    <!-- Wizard: welcome + license, progress, then a "Completed" page (WixUI_Minimal). -->
+    <ui:WixUI Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.RepoRoot)\windows\installer\License.rtf" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT"
+              Value="Windows can now open .vbn images. If Explorer shows no thumbnails yet, sign out and back in." />
 
     <Feature Id="Main" Title="unVBN codec">
       <ComponentRef Id="Codec" />
