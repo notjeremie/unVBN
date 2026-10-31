@@ -14,7 +14,7 @@ to video.
 | Other apps | – | Any app that reads images through Windows' WIC |
 | Animations → PNG sequence, MP4, WebM | ✅ app + `unvbn` command line | – |
 
-Download: **[Releases](https://github.com/notjeremie/unVBN/releases)**. The format is documented in
+Download: **[latest release](https://github.com/notjeremie/unVBN/releases/latest)**. The format is documented in
 [`FORMAT.md`](FORMAT.md).
 
 ## Install
