@@ -8,7 +8,7 @@ import XCTest
 /// Real files belong to their owners and are not in the repo: the test is skipped when the folder is absent.
 /// Folder: env VBN_SAMPLES_DIR (pass TEST_RUNNER_VBN_SAMPLES_DIR=... to xcodebuild), each `X.vbn` next to `X.png`.
 final class RealSampleTests: XCTestCase {
-    static let defaultDir = NSHomeDirectory() + "/vbn-samples"
+    static let defaultDir = NSHomeDirectory() + "/Documents/Coding/vbn-samples"   // real samples, kept OUT of the repo
 
     func testRealSamplesMatchReferencePNGs() throws {
         let dir = ProcessInfo.processInfo.environment["VBN_SAMPLES_DIR"] ?? Self.defaultDir
