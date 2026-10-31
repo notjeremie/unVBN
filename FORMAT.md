@@ -32,6 +32,14 @@ e.g. `NAME_00000.vbn` … `NAME_00749.vbn`). Typical uses: station branding, on-
 - **Format 3 (DXT5 / BC3)**: ceil(w/4) × ceil(h/4) blocks of 16 bytes (8 bytes alpha + 8 bytes 565 colour).
 - **Rows are stored bottom-up** (OpenGL convention): flip vertically for a normal image.
 
+## No audio
+
+A `.vbn` holds one image and nothing else: in every file checked, the size is exactly the 192-byte header
+plus the payload, and the header has no audio fields. A sequence is only a folder of numbered frames,
+with no container or index that could carry sound. A survey of a production image library
+(~100,000 `.vbn` files) found no audio files at all, so sound for an animation, if any, lives elsewhere
+in the playout system (the scene, a clip or the audio chain), not with the frames.
+
 ## Sample survey (1,500 random files on the share)
 
 60 % `0x003` raw DXT5 · 27 % `0x103` QuickLZ+DXT5 · 9 % `0x100` QuickLZ+BGRA · 2 % `0x000` raw BGRA ·
