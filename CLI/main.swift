@@ -3,16 +3,16 @@ import VBNCore
 import VBNExport
 
 let usage = """
-usage: unvbn <folder | frame.vbn>... [-f png|mp4|webm|prores] [--fps 50] [-o OUTPUT] [--background #000000] [--crf 30]
+usage: unvbn <folder | frame.vbn>... [-f png|mp4|webm] [--fps 50] [-o OUTPUT] [--background #000000] [--crf 30]
        unvbn info <folder | frame.vbn>...
 
-Converts Vizrt .vbn sequences (NAME_00000.vbn, NAME_00001.vbn, ...) to a PNG sequence, MP4 (H.264),
-WebM (VP9 + alpha) or MOV (ProRes 4444 + alpha). A folder holding several sequences converts each one.
+Converts Vizrt .vbn sequences (NAME_00000.vbn, NAME_00001.vbn, ...) to a PNG sequence, MP4 (H.264)
+or WebM (VP9 + alpha). A folder holding several sequences converts each one.
 
-  -f, --format      png (default; a folder of PNGs), mp4, webm, prores
+  -f, --format      png (default; a folder of PNGs), mp4, webm
   --fps             frames per second (default 50)
   -o, --output      output file (or folder for png). Default: next to the sequence folder,
-                    NAME.mp4 / NAME.webm / NAME.mov / NAME_png/. Only with a single sequence.
+                    NAME.mp4 / NAME.webm / NAME_png/. Only with a single sequence.
   --background      MP4 only (no alpha): colour behind transparent pixels (default #000000)
   --crf             WebM quality, 0 (best) to 63 (default 30)
 """
@@ -84,7 +84,7 @@ while i < args.count {
     switch args[i] {
     case "-f", "--format":
         let v = value()
-        guard let f = ExportFormat(rawValue: v.lowercased()) else { fail("unknown format \(v) (png, mp4, webm, prores)") }
+        guard let f = ExportFormat(rawValue: v.lowercased()) else { fail("unknown format \(v) (png, mp4, webm)") }
         options.format = f
     case "--fps":
         let v = value()

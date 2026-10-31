@@ -174,7 +174,7 @@ struct MainView: View {
                 VStack(spacing: 4) {
                     Text(model.sequence == nil ? "Drop a .vbn sequence folder or frame" : "Drop another sequence")
                         .font(.headline)
-                    Text("Exports PNG frames, MP4, WebM with alpha or ProRes 4444")
+                    Text("Exports PNG frames, MP4 or WebM with alpha")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             )

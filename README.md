@@ -8,7 +8,7 @@ A small macOS app that makes Vizrt Viz Artist / Viz Engine `.vbn` image files vi
 - **Finder thumbnails**
 - **Double-click → opens as a PNG in Preview (Aperçu)**, plus *File > Export PNG…* for the last file opened
 - **Sequence export**: an animation stored as `NAME_00000.vbn` … `NAME_00749.vbn` becomes a **PNG sequence**,
-  **MP4** (H.264), **WebM** (VP9 with alpha) or **MOV** (ProRes 4444 with alpha), at 50 fps by default.
+  **MP4** (H.264) or **WebM** (VP9 with alpha), at 50 fps by default.
   From the app window or the `unvbn` command-line tool.
 
 The format itself is documented in [`FORMAT.md`](FORMAT.md). The Python reference decoder is in `reference/`.
@@ -35,7 +35,7 @@ sequences offers a picker.
 ln -s ~/Applications/unVBN.app/Contents/Helpers/unvbn /usr/local/bin/unvbn   # or any folder on your PATH
 unvbn info LOGO_FOLDER/                       # name, frame count, size, missing frames
 unvbn LOGO_FOLDER/ -f webm                    # -> LOGO.webm next to the folder
-unvbn LOGO_00000.vbn -f prores --fps 25 -o logo.mov
+unvbn LOGO_00000.vbn -f mp4 --fps 25 -o logo.mp4
 unvbn ALL_LOGOS/ -f png                       # every sequence in the folder -> NAME_png/ folders
 unvbn LOGO_FOLDER/ -f mp4 --background '#FFFFFF'
 ```
@@ -45,7 +45,6 @@ unvbn LOGO_FOLDER/ -f mp4 --background '#FFFFFF'
 | `png` | yes | One PNG per frame, same names as the source frames. |
 | `mp4` | no | H.264, BT.709. Transparency is flattened onto `--background` (black by default). Odd sizes are padded by 1 px. |
 | `webm` | yes | VP9 `yuva420p`, `--crf` 30 by default (0 best … 63). Plays with transparency in Chrome and Firefox. |
-| `prores` | yes | ProRes 4444 `.mov`, straight (unpremultiplied) alpha, BT.709. For editing and playout. Large files. |
 
 Frames are numbered by the digits at the end of their names. Gaps in the numbering are reported and skipped,
 and every frame must have the same size.
@@ -71,7 +70,7 @@ declaration gives way to Vizrt's own if one is ever installed.
 | Target | What |
 |---|---|
 | `VBNCore` | Static framework: `VBNImage.decode(data:) -> CGImage` (upright, non-premultiplied alpha), `VBNImage.decodeRGBA`, `pngData`, `QuickLZ` (1.5 level 3), `BC3` (DXT5). Linked statically into each target, so there is no embedded framework to sign. |
-| `VBNExport` | Static framework: `FrameSequence` (finds and orders frames), `SequenceExporter` (PNG / AVAssetWriter H.264 and ProRes / ffmpeg pipe for WebM). |
+| `VBNExport` | Static framework: `FrameSequence` (finds and orders frames), `SequenceExporter` (PNG / AVAssetWriter H.264 / ffmpeg pipe for WebM). |
 | `unVBN` | Host app (AppKit plus SwiftUI), `App/`. Embeds `unvbn` and `ffmpeg` in `Contents/Helpers/`. |
 | `unvbn-cli` | The `unvbn` command-line tool, `CLI/`. (The target name differs from the app's by more than case: on a case-insensitive disk they would share build folders.) |
 | `unVBNPreview` | Quick Look preview extension, `Preview/`. Sandboxed, as Quick Look requires. |

@@ -3,7 +3,7 @@ import CoreVideo
 import Foundation
 import VBNCore
 
-/// Converts a `FrameSequence` to a PNG sequence, MP4, WebM or ProRes 4444 MOV.
+/// Converts a `FrameSequence` to a PNG sequence, MP4 or WebM.
 ///
 /// Frames are decoded in parallel batches and handed in order to a sink. Synchronous: call it off the
 /// main thread. `progress` gets (frames done, total); `isCancelled` is polled between frames.
@@ -27,7 +27,7 @@ public final class SequenceExporter {
         let sink: FrameSink
         switch options.format {
         case .png: sink = try PNGSink(directory: output)
-        case .mp4, .prores: sink = try AVSink(output: output, options: options, width: first.width, height: first.height)
+        case .mp4: sink = try MP4Sink(output: output, options: options, width: first.width, height: first.height)
         case .webm: sink = try FFmpegSink(ffmpeg: ffmpeg!, output: output, options: options,
                                           width: first.width, height: first.height)
         }
@@ -102,8 +102,8 @@ private final class PNGSink: FrameSink {
     func abort() { for url in written { try? FileManager.default.removeItem(at: url) } }
 }
 
-/// H.264 MP4 (flattened onto a background) or ProRes 4444 MOV (straight alpha), via AVAssetWriter.
-private final class AVSink: FrameSink {
+/// H.264 MP4 via AVAssetWriter. No alpha: frames are flattened onto the background colour.
+private final class MP4Sink: FrameSink {
     private let writer: AVAssetWriter
     private let input: AVAssetWriterInput
     private let adaptor: AVAssetWriterInputPixelBufferAdaptor
@@ -116,32 +116,29 @@ private final class AVSink: FrameSink {
     init(output: URL, options: ExportOptions, width: Int, height: Int) throws {
         self.output = output; self.options = options
         // H.264 4:2:0 needs even dimensions: pad right/bottom with the background.
-        let flatten = options.format == .mp4
-        self.width = flatten ? (width + 1) & ~1 : width
-        self.height = flatten ? (height + 1) & ~1 : height
-        // Exact rational time base: 50 -> 50/1, 29.97 -> 30000/1001-ish via 1000x scale.
+        self.width = (width + 1) & ~1
+        self.height = (height + 1) & ~1
+        // Exact rational time base: 50 -> 50/1, 29.97 -> 29970/1000.
         timescale = CMTimeScale((options.fps * 1000).rounded())
         frameTicks = 1000
 
         try? FileManager.default.removeItem(at: output)
-        writer = try AVAssetWriter(outputURL: output, fileType: flatten ? .mp4 : .mov)
-
-        var settings: [String: Any] = [AVVideoWidthKey: self.width, AVVideoHeightKey: self.height]
-        if flatten {
-            settings[AVVideoCodecKey] = AVVideoCodecType.h264
-            settings[AVVideoCompressionPropertiesKey] = [
+        writer = try AVAssetWriter(outputURL: output, fileType: .mp4)
+        let settings: [String: Any] = [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey: self.width,
+            AVVideoHeightKey: self.height,
+            AVVideoCompressionPropertiesKey: [
                 AVVideoAverageBitRateKey: max(2_000_000, Int(Double(self.width * self.height) * options.fps * 0.2)),
                 AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
                 AVVideoExpectedSourceFrameRateKey: options.fps,
-            ]
-        } else {
-            settings[AVVideoCodecKey] = AVVideoCodecType.proRes4444
-        }
-        // HD broadcast is BT.709. Untagged, VideoToolbox picks the SD (601) matrix and colours drift.
-        settings[AVVideoColorPropertiesKey] = [
-            AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
-            AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
-            AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
+            ],
+            // HD broadcast is BT.709. Untagged, VideoToolbox picks the SD (601) matrix and colours drift.
+            AVVideoColorPropertiesKey: [
+                AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
+            ],
         ]
         input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
         input.expectsMediaDataInRealTime = false
@@ -170,34 +167,29 @@ private final class AVSink: FrameSink {
         guard adaptor.append(buffer, withPresentationTime: time) else { throw failure() }
     }
 
-    /// RGBA (straight) -> BGRA. MP4: composite over the background, padding included. ProRes: straight copy.
+    /// RGBA (straight alpha) -> opaque BGRA composited over the background, padding included.
     private func fill(_ buffer: CVPixelBuffer, from image: VBNImage) {
         CVPixelBufferLockBaseAddress(buffer, [])
         defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
         let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
         let stride = CVPixelBufferGetBytesPerRow(buffer)
         let bg = options.background
-        let flatten = options.format == .mp4
         image.rgba.withUnsafeBufferPointer { src in
             for y in 0 ..< height {
                 let row = base + y * stride
                 for x in 0 ..< width {
                     let d = row + x * 4
                     guard x < image.width, y < image.height else {
-                        d[0] = bg.b; d[1] = bg.g; d[2] = bg.r; d[3] = flatten ? 255 : 0
+                        d[0] = bg.b; d[1] = bg.g; d[2] = bg.r; d[3] = 255
                         continue
                     }
                     let s = (y * image.width + x) * 4
                     let r = src[s], g = src[s + 1], b = src[s + 2], a = src[s + 3]
-                    if flatten {
-                        let a16 = UInt16(a), ia = 255 - a16
-                        d[0] = UInt8((UInt16(b) * a16 + UInt16(bg.b) * ia + 127) / 255)
-                        d[1] = UInt8((UInt16(g) * a16 + UInt16(bg.g) * ia + 127) / 255)
-                        d[2] = UInt8((UInt16(r) * a16 + UInt16(bg.r) * ia + 127) / 255)
-                        d[3] = 255
-                    } else {
-                        d[0] = b; d[1] = g; d[2] = r; d[3] = a
-                    }
+                    let a16 = UInt16(a), ia = 255 - a16
+                    d[0] = UInt8((UInt16(b) * a16 + UInt16(bg.b) * ia + 127) / 255)
+                    d[1] = UInt8((UInt16(g) * a16 + UInt16(bg.g) * ia + 127) / 255)
+                    d[2] = UInt8((UInt16(r) * a16 + UInt16(bg.r) * ia + 127) / 255)
+                    d[3] = 255
                 }
             }
         }

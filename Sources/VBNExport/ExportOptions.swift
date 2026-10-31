@@ -7,8 +7,6 @@ public enum ExportFormat: String, CaseIterable, Identifiable {
     case mp4
     /// VP9 with alpha in WebM, encoded by the bundled ffmpeg.
     case webm
-    /// Apple ProRes 4444 with alpha in QuickTime.
-    case prores
 
     public var id: String { rawValue }
 
@@ -17,7 +15,6 @@ public enum ExportFormat: String, CaseIterable, Identifiable {
         case .png: return "PNG sequence"
         case .mp4: return "MP4 (H.264)"
         case .webm: return "WebM (VP9 + alpha)"
-        case .prores: return "MOV (ProRes 4444 + alpha)"
         }
     }
 
@@ -27,7 +24,6 @@ public enum ExportFormat: String, CaseIterable, Identifiable {
         case .png: return nil
         case .mp4: return "mp4"
         case .webm: return "webm"
-        case .prores: return "mov"
         }
     }
 

@@ -89,7 +89,7 @@ final class ExportTests: XCTestCase {
         XCTAssertNotEqual(img.alphaInfo, .none)
     }
 
-    // MARK: MP4 / ProRes
+    // MARK: MP4
 
     /// Reads every frame of a movie as BGRA (straight) and returns (frame count, first frame pixel 0, size).
     private func readMovie(_ url: URL) async throws -> (count: Int, pixel: [UInt8], size: CGSize, duration: Double) {
@@ -143,25 +143,10 @@ final class ExportTests: XCTestCase {
         XCTAssertEqual(oddMovie.size, CGSize(width: 8, height: 6))
     }
 
-    func testProResKeepsStraightAlpha() async throws {
-        let seq = try makeSequence(count: 5, width: 64, height: 48) { _ in (200, 100, 50, 128) }
-        let out = dir.appendingPathComponent("out.mov")
-        try SequenceExporter(sequence: seq, options: .init(format: .prores, fps: 25), output: out).run()
-        let movie = try await readMovie(out)
-        XCTAssertEqual(movie.count, 5)
-        XCTAssertEqual(movie.duration, 0.2, accuracy: 0.001)
-        XCTAssertEqual(movie.size, CGSize(width: 64, height: 48))
-        // Straight alpha survives: colour stays (200,100,50), not premultiplied (100,50,25).
-        XCTAssertEqual(Double(movie.pixel[3]), 128, accuracy: 3)
-        XCTAssertEqual(Double(movie.pixel[2]), 200, accuracy: 4)
-        XCTAssertEqual(Double(movie.pixel[1]), 100, accuracy: 4)
-        XCTAssertEqual(Double(movie.pixel[0]), 50, accuracy: 4)
-    }
-
     func testFractionalFrameRate() async throws {
         let seq = try makeSequence(count: 30, width: 16, height: 16)
-        let out = dir.appendingPathComponent("ntsc.mov")
-        try SequenceExporter(sequence: seq, options: .init(format: .prores, fps: 29.97), output: out).run()
+        let out = dir.appendingPathComponent("ntsc.mp4")
+        try SequenceExporter(sequence: seq, options: .init(format: .mp4, fps: 29.97), output: out).run()
         let movie = try await readMovie(out)
         XCTAssertEqual(movie.duration, 30 / 29.97, accuracy: 0.001)
     }
@@ -199,9 +184,9 @@ final class ExportTests: XCTestCase {
 
     func testCancelRemovesPartialOutput() throws {
         let seq = try makeSequence(count: 30, width: 16, height: 16)
-        let out = dir.appendingPathComponent("cancel.mov")
+        let out = dir.appendingPathComponent("cancel.mp4")
         var done = 0
-        XCTAssertThrowsError(try SequenceExporter(sequence: seq, options: .init(format: .prores), output: out)
+        XCTAssertThrowsError(try SequenceExporter(sequence: seq, options: .init(format: .mp4), output: out)
             .run(progress: { d, _ in done = d }, isCancelled: { done >= 3 })) {
             XCTAssertEqual($0 as? ExportError, .cancelled)
         }
