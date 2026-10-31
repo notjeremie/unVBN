@@ -21,6 +21,9 @@ VERSION=$(sed -n 's/^ *MARKETING_VERSION: *"\(.*\)"/\1/p' project.yml)
 DMG="$WORK/unVBN-$VERSION.dmg"
 IDENTITY="Developer ID Application"
 
+# iCloud Drive leaves conflict copies ("ExportView 2.swift") that XcodeGen would compile.
+dupes=$(find . \( -path ./build -o -path ./.git -o -path ./samples \) -prune -o -name "* [0-9]*" -print)
+if [ -n "$dupes" ]; then echo "iCloud conflict copies present, remove them first:" >&2; echo "$dupes" >&2; exit 1; fi
 command -v xcodegen >/dev/null && xcodegen generate >/dev/null
 scripts/build-ffmpeg.sh   # cached; the app embeds build/ffmpeg/ffmpeg for WebM export
 rm -rf "$WORK" "$OUT"; mkdir -p "$WORK" "$OUT"
