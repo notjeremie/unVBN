@@ -5,10 +5,13 @@ import XCTest
 @testable import VBNCore
 
 /// Compares the Swift decoder against PNGs made by the Python reference, for real Viz files.
-/// Real files belong to their owners and are not in the repo: the test is skipped when the folder is absent.
+/// Real files belong to their owners and are gitignored (`samples/`): the test is skipped when the folder is absent.
 /// Folder: env VBN_SAMPLES_DIR (pass TEST_RUNNER_VBN_SAMPLES_DIR=... to xcodebuild), each `X.vbn` next to `X.png`.
 final class RealSampleTests: XCTestCase {
-    static let defaultDir = NSHomeDirectory() + "/Documents/Coding/vbn-samples"   // real samples, kept OUT of the repo
+    /// `<repo>/samples/` — gitignored: real samples must never be committed.
+    static let defaultDir = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("samples").path
 
     func testRealSamplesMatchReferencePNGs() throws {
         let dir = ProcessInfo.processInfo.environment["VBN_SAMPLES_DIR"] ?? Self.defaultDir

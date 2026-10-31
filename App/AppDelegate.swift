@@ -68,10 +68,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Decodes a .vbn and writes it to `$TMPDIR/VBN/<name>.png`.
+    /// Decodes a .vbn and writes it to `$TMPDIR/iVBN/<name>.png`.
     private func convert(_ url: URL) throws -> URL {
         let png = try VBNImage.pngData(fromVBN: Data(contentsOf: url))
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("VBN", isDirectory: true)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("iVBN", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let out = dir.appendingPathComponent(url.deletingPathExtension().lastPathComponent).appendingPathExtension("png")
         try png.write(to: out, options: .atomic)
@@ -120,7 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if window == nil {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 220),
                              styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
-            w.title = "VBN"
+            w.title = "iVBN"
             w.isReleasedWhenClosed = false
             w.contentView = NSHostingView(rootView: WelcomeView(
                 open: { [weak self] in self?.openDocument(nil) },
@@ -139,10 +139,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "About VBN", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "About iVBN", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Hide VBN", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        appMenu.addItem(withTitle: "Quit VBN", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Hide iVBN", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: "Quit iVBN", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         main.addItem(appItem)
 
@@ -168,7 +168,7 @@ struct WelcomeView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Vizrt .vbn viewer").font(.headline)
-            Text("Double-click a .vbn file to open it in Preview as a PNG. Space bar in Finder shows a Quick Look preview, and Finder draws thumbnails. This window only appears when VBN is launched on its own.")
+            Text("Double-click a .vbn file to open it in Preview as a PNG. Space bar in Finder shows a Quick Look preview, and Finder draws thumbnails. This window only appears when iVBN is launched on its own.")
                 .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)

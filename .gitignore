@@ -6,3 +6,4 @@ xcuserdata/
 # Real Vizrt samples belong to their owners: never commit them.
 *.vbn
 samples/
+HANDOFF.md
