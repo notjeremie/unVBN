@@ -1,0 +1,98 @@
+# Builds the Windows WIC codec (x64 and ARM64), tests it through WIC itself (regsvr32, then the MSI
+# install/uninstall cycle) and uploads the MSIs as artifacts.
+name: Windows codec
+
+on:
+  push:
+    branches: [main]
+    paths: ["windows/**", ".github/workflows/windows.yml", "project.yml", "FORMAT.md"]
+  pull_request:
+    paths: ["windows/**", ".github/workflows/windows.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  codec:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            cmake_arch: x64
+            runner: windows-latest
+          - arch: arm64
+            cmake_arch: ARM64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version (from project.yml)
+        run: |
+          $v = (Select-String -Path project.yml -Pattern 'MARKETING_VERSION:\s*"([^"]+)"').Matches[0].Groups[1].Value
+          while (($v -split '\.').Count -lt 3) { $v = "$v.0" }
+          "VERSION=$v" >> $env:GITHUB_ENV
+          Write-Host "version $v"
+
+      - name: Build
+        run: |
+          cmake -S windows -B build -A ${{ matrix.cmake_arch }} -DUNVBN_VERSION="$env:VERSION"
+          cmake --build build --config Release
+
+      - name: Decoder tests
+        run: |
+          build\Release\test_decode.exe
+          if ($LASTEXITCODE) { throw "decoder tests failed" }
+
+      - name: WIC tests (regsvr32)
+        run: |
+          $dll = (Resolve-Path build\Release\unvbn_wic.dll).Path
+          $p = Start-Process regsvr32 -ArgumentList '/s', "`"$dll`"" -Wait -PassThru
+          if ($p.ExitCode) { throw "regsvr32 failed: $($p.ExitCode)" }
+          build\Release\wic_test.exe
+          if ($LASTEXITCODE) { throw "WIC tests failed" }
+          $p = Start-Process regsvr32 -ArgumentList '/s', '/u', "`"$dll`"" -Wait -PassThru
+          if ($p.ExitCode) { throw "regsvr32 /u failed: $($p.ExitCode)" }
+          build\Release\wic_test.exe --expect-missing
+          if ($LASTEXITCODE) { throw "codec still registered after regsvr32 /u" }
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Build MSI
+        run: |
+          dotnet tool install --global wix --version 4.0.5
+          New-Item -ItemType Directory -Force dist | Out-Null
+          wix build windows/installer/unVBN.wxs -arch ${{ matrix.arch }} `
+            -d Version=$env:VERSION -d DllPath=build\Release\unvbn_wic.dll -d RepoRoot="$PWD" `
+            -o "dist\unVBN-windows-$env:VERSION-${{ matrix.arch }}.msi"
+          if ($LASTEXITCODE) { throw "wix build failed" }
+
+      - name: MSI install, use, uninstall
+        run: |
+          $msi = (Resolve-Path dist\*.msi).Path
+          $p = Start-Process msiexec -ArgumentList '/i', "`"$msi`"", '/qn', '/l*v', 'install.log' -Wait -PassThru
+          if ($p.ExitCode) { Get-Content install.log -Tail 60; throw "install failed: $($p.ExitCode)" }
+          $key = 'HKLM:\SOFTWARE\Classes\CLSID\{09ADE08D-D804-4C88-A367-06D3E3152893}\InprocServer32'
+          $registered = (Get-ItemProperty $key).'(default)'
+          Write-Host "registered DLL: $registered"
+          if ($registered -notlike "*\Program Files\unVBN\unvbn_wic.dll") { throw "codec not registered from Program Files" }
+          build\Release\wic_test.exe
+          if ($LASTEXITCODE) { throw "WIC tests failed after MSI install" }
+          $p = Start-Process msiexec -ArgumentList '/x', "`"$msi`"", '/qn', '/l*v', 'uninstall.log' -Wait -PassThru
+          if ($p.ExitCode) { Get-Content uninstall.log -Tail 60; throw "uninstall failed: $($p.ExitCode)" }
+          build\Release\wic_test.exe --expect-missing
+          if ($LASTEXITCODE) { throw "codec still registered after uninstall" }
+          if (Test-Path 'C:\Program Files\unVBN\unvbn_wic.dll') { throw "DLL left behind" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unVBN-windows-${{ matrix.arch }}
+          path: dist/*.msi
+          if-no-files-found: error

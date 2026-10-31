@@ -1,0 +1,38 @@
+<!--
+  unVBN for Windows: installs the WIC codec so Windows can open Vizrt .vbn images.
+  Built in CI:  wix build unVBN.wxs -arch x64|arm64 -d Version=0.3.0 -d DllPath=...\unvbn_wic.dll -d RepoRoot=...
+  Registration: the DLL's own DllRegisterServer/DllUnregisterServer (SelfReg), the single source of truth
+  for its registry entries, also used by `regsvr32`.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="unVBN (Vizrt .vbn images for Windows)"
+           Manufacturer="unVBN"
+           Version="$(var.Version)"
+           UpgradeCode="BB4DA954-4F46-4AAD-B1E7-BF0B4AB1B3E1"
+           Scope="perMachine"
+           Compressed="yes">
+    <SummaryInformation Description="Lets Windows open Vizrt Viz Artist / Viz Engine .vbn images" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of unVBN is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/notjeremie/unVBN" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/notjeremie/unVBN" />
+    <Property Id="ARPCOMMENTS" Value="WIC codec: Explorer thumbnails and preview, and photo viewers, for .vbn images" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="unVBN">
+        <Component Id="Codec">
+          <File Id="CodecDll" Source="$(var.DllPath)" Name="unvbn_wic.dll" KeyPath="yes" SelfRegCost="1" />
+        </Component>
+        <Component Id="License">
+          <File Id="LicenseFile" Source="$(var.RepoRoot)\LICENSE" Name="LICENSE.txt" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="unVBN codec">
+      <ComponentRef Id="Codec" />
+      <ComponentRef Id="License" />
+    </Feature>
+  </Package>
+</Wix>
