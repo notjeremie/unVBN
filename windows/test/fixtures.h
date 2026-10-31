@@ -42,17 +42,17 @@ inline Bytes qlzAllLiterals(const Bytes& data) {
     return qlzBlock(body, uint32_t(data.size()));
 }
 
-/// 4x4 BGRA pixels in STORED (bottom-up) order. Stored row r, column x:
-/// B = x, G = r, R = 0x10*(x+1)+r, A = 0x80+4r+x.
-inline Bytes bgra4x4Stored() {
+/// 4x4 pixels in STORED (bottom-up) order, byte order R, G, B, A. Stored row r, column x:
+/// R = 0x10*(x+1)+r, G = r, B = x, A = 0x80+4r+x.
+inline Bytes rgba4x4Stored() {
     Bytes out;
     for (int r = 0; r < 4; ++r)
         for (int x = 0; x < 4; ++x)
-            out.insert(out.end(), {uint8_t(x), uint8_t(r), uint8_t(0x10 * (x + 1) + r), uint8_t(0x80 + 4 * r + x)});
+            out.insert(out.end(), {uint8_t(0x10 * (x + 1) + r), uint8_t(r), uint8_t(x), uint8_t(0x80 + 4 * r + x)});
     return out;
 }
 
-/// Expected upright BGRA at (x, y) for bgra4x4Stored(): upright row y = stored row 3 - y.
+/// Expected upright BGRA at (x, y) for rgba4x4Stored(): upright row y = stored row 3 - y.
 inline Bytes expectedBGRA4x4(int x, int y) {
     const int r = 3 - y;
     return {uint8_t(x), uint8_t(r), uint8_t(0x10 * (x + 1) + r), uint8_t(0x80 + 4 * r + x)};

@@ -18,15 +18,15 @@ final class VBNCoreTests: XCTestCase {
 
     // MARK: Raw BGRA
 
-    func testRawBGRA4x4IsUprightRGBA() throws {
-        let img = try VBNImage.decodeRGBA(data: makeVBN(width: 4, height: 4, format: 0x000, payload: bgra4x4Stored))
+    func testRawRGBA4x4IsUpright() throws {
+        let img = try VBNImage.decodeRGBA(data: makeVBN(width: 4, height: 4, format: 0x000, payload: rgba4x4Stored))
         assert4x4(img)
-        XCTAssertEqual(img.header.pixelFormat, .bgra8888)
+        XCTAssertEqual(img.header.pixelFormat, .rgba8888)
         XCTAssertFalse(img.header.compressed)
     }
 
     func testCGImageHasAlphaAndSize() throws {
-        let cg = try VBNImage.decode(data: makeVBN(width: 4, height: 4, format: 0x000, payload: bgra4x4Stored))
+        let cg = try VBNImage.decode(data: makeVBN(width: 4, height: 4, format: 0x000, payload: rgba4x4Stored))
         XCTAssertEqual(cg.width, 4); XCTAssertEqual(cg.height, 4)
         XCTAssertEqual(cg.alphaInfo, .last)
         let png = try VBNImage.pngData(from: cg)
@@ -76,8 +76,8 @@ final class VBNCoreTests: XCTestCase {
     // MARK: QuickLZ
 
     func testQuickLZAllLiterals() throws {
-        XCTAssertEqual(try QuickLZ.decompress(qlzAllLiterals(bgra4x4Stored)), bgra4x4Stored)
-        let img = try VBNImage.decodeRGBA(data: makeVBN(width: 4, height: 4, format: 0x100, payload: qlzAllLiterals(bgra4x4Stored)))
+        XCTAssertEqual(try QuickLZ.decompress(qlzAllLiterals(rgba4x4Stored)), rgba4x4Stored)
+        let img = try VBNImage.decodeRGBA(data: makeVBN(width: 4, height: 4, format: 0x100, payload: qlzAllLiterals(rgba4x4Stored)))
         assert4x4(img)
         XCTAssertTrue(img.header.compressed)
     }
@@ -118,36 +118,36 @@ final class VBNCoreTests: XCTestCase {
     }
 
     func testQuickLZStoredBlock() throws {
-        let block: [UInt8] = [0x4E] + le32(9 + 64) + le32(64) + bgra4x4Stored
+        let block: [UInt8] = [0x4E] + le32(9 + 64) + le32(64) + rgba4x4Stored
         assert4x4(try VBNImage.decodeRGBA(data: makeVBN(width: 4, height: 4, format: 0x100, payload: block)))
     }
 
     // MARK: Errors
 
     func testBadMagic() {
-        XCTAssertThrowsError(try VBNImage.decodeRGBA(data: makeVBN(width: 4, height: 4, format: 0, payload: bgra4x4Stored, magic: 0x1234_5678))) {
+        XCTAssertThrowsError(try VBNImage.decodeRGBA(data: makeVBN(width: 4, height: 4, format: 0, payload: rgba4x4Stored, magic: 0x1234_5678))) {
             XCTAssertEqual($0 as? VBNError, .badMagic(0x1234_5678))
         }
         XCTAssertThrowsError(try VBNImage.decodeRGBA(data: Data([0x89, 0x50, 0x4E, 0x47])))
     }
 
     func testTruncated() {
-        let full = makeVBN(width: 4, height: 4, format: 0, payload: bgra4x4Stored)
+        let full = makeVBN(width: 4, height: 4, format: 0, payload: rgba4x4Stored)
         for n in [0, 3, 100, 0xC0, 0xC0 + 10] {
             XCTAssertThrowsError(try VBNImage.decodeRGBA(data: full.prefix(n)), "length \(n)") { err in
                 guard case .truncated = err as? VBNError else { return XCTFail("\(n): \(err)") }
             }
         }
         // Header claims a payload that is too small for the pixels.
-        XCTAssertThrowsError(try VBNImage.decodeRGBA(data: makeVBN(width: 4, height: 4, format: 0, payload: Array(bgra4x4Stored.prefix(60)))))
+        XCTAssertThrowsError(try VBNImage.decodeRGBA(data: makeVBN(width: 4, height: 4, format: 0, payload: Array(rgba4x4Stored.prefix(60)))))
         // Compressed stream cut short.
-        let q = qlzAllLiterals(bgra4x4Stored)
+        let q = qlzAllLiterals(rgba4x4Stored)
         XCTAssertThrowsError(try VBNImage.decodeRGBA(data: makeVBN(width: 4, height: 4, format: 0x100, payload: Array(q.prefix(40)))))
     }
 
     func testUnknownFormat() {
         for f: UInt32 in [0x001, 0x005, 0x203, 0x10003] {
-            XCTAssertThrowsError(try VBNImage.decodeRGBA(data: makeVBN(width: 4, height: 4, format: f, payload: bgra4x4Stored))) {
+            XCTAssertThrowsError(try VBNImage.decodeRGBA(data: makeVBN(width: 4, height: 4, format: f, payload: rgba4x4Stored))) {
                 XCTAssertEqual($0 as? VBNError, .unknownFormat(f))
             }
         }

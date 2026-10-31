@@ -98,7 +98,7 @@ xcodebuild -project unVBN.xcodeproj -scheme unVBN -destination 'platform=macOS' 
 xcodebuild -project unVBN.xcodeproj -scheme unVBN -configuration Release -derivedDataPath build/DerivedData build
 ```
 
-The tests build small synthetic files in code: raw BGRA 4×4, DXT5 8×4 with known blocks, and QuickLZ
+The tests build small synthetic files in code: raw RGBA 4×4, DXT5 8×4 with known blocks, and QuickLZ
 streams (all-literal, stored, 1-byte and 2-byte back-references). They also check the error cases.
 `RealSampleTests` decodes real `.vbn` files and compares each one pixel for pixel against the `X.png`
 the Python reference wrote next to `X.vbn`. It reads `samples/` at the repo root (git-ignored) by default;

@@ -8,7 +8,7 @@ public struct VBNHeader: Equatable {
     public static let magic: UInt32 = 0x900D_F11E
     public static let size = 0xC0
 
-    public enum PixelFormat: Equatable { case bgra8888, dxt5 }
+    public enum PixelFormat: Equatable { case rgba8888, dxt5 }
 
     public var version: UInt32
     public var width: Int
@@ -36,7 +36,7 @@ public struct VBNHeader: Equatable {
         rawFormat = readU32(b, 0x18)
         guard rawFormat & ~0x1FF == 0 else { throw VBNError.unknownFormat(rawFormat) }
         switch rawFormat & 0xFF {
-        case 0: pixelFormat = .bgra8888
+        case 0: pixelFormat = .rgba8888
         case 3: pixelFormat = .dxt5
         default: throw VBNError.unknownFormat(rawFormat)
         }
@@ -47,7 +47,7 @@ public struct VBNHeader: Equatable {
     /// Bytes of pixel data once decompressed.
     public var pixelDataSize: Int {
         switch pixelFormat {
-        case .bgra8888: return width * height * 4
+        case .rgba8888: return width * height * 4
         case .dxt5: return BC3.payloadSize(width: width, height: height)
         }
     }
@@ -78,12 +78,9 @@ public struct VBNImage {
         switch header.pixelFormat {
         case .dxt5:
             stored = try BC3.decode(payload, width: w, height: h)
-        case .bgra8888:
-            stored = [UInt8](repeating: 0, count: w * h * 4)
-            for i in stride(from: 0, to: w * h * 4, by: 4) {
-                stored[i] = payload[i + 2]; stored[i + 1] = payload[i + 1]
-                stored[i + 2] = payload[i]; stored[i + 3] = payload[i + 3]
-            }
+        case .rgba8888:
+            // Uncompressed pixels are stored R, G, B, A (verified on real files: a red logo decodes red).
+            stored = Array(payload[0 ..< w * h * 4])
         }
 
         // Rows are stored bottom-up (OpenGL): flip.

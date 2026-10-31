@@ -12,8 +12,8 @@ e.g. `NAME_00000.vbn` … `NAME_00749.vbn`). Typical uses: station branding, on-
 | 0x08 | u32 | 4 | ? (always 4 in the sample) |
 | 0x0C | u32 | e.g. 436 | width |
 | 0x10 | u32 | e.g. 180 | height |
-| 0x14 | u32 | 4 | channels (BGRA / RGBA after decode) |
-| 0x18 | u32 | 0x000 / 0x003 / 0x100 / 0x103 | **pixel format**: low byte 0 = BGRA8888, 3 = DXT5 (BC3); bit 0x100 = payload QuickLZ-compressed |
+| 0x14 | u32 | 4 | channels (RGBA) |
+| 0x18 | u32 | 0x000 / 0x003 / 0x100 / 0x103 | **pixel format**: low byte 0 = RGBA8888, 3 = DXT5 (BC3); bit 0x100 = payload QuickLZ-compressed |
 | 0x1C | u32 | 5 | ? |
 | 0x20 | u32 | 0 | ? |
 | 0x24 | u32 | n | payload size in bytes (also repeated at 0x40) |
@@ -28,7 +28,7 @@ e.g. `NAME_00000.vbn` … `NAME_00749.vbn`). Typical uses: station branding, on-
 
 ## Pixels
 
-- **Format 0 (BGRA8888)**: width × height × 4, byte order B, G, R, A.
+- **Format 0 (RGBA8888)**: width × height × 4, byte order **R, G, B, A**. (Earlier versions of this spec said B, G, R, A, which swapped red and blue; corrected after a red logo decoded blue.)
 - **Format 3 (DXT5 / BC3)**: ceil(w/4) × ceil(h/4) blocks of 16 bytes (8 bytes alpha + 8 bytes 565 colour).
 - **Rows are stored bottom-up** (OpenGL convention): flip vertically for a normal image.
 
@@ -42,12 +42,12 @@ in the playout system (the scene, a clip or the audio chain), not with the frame
 
 ## Sample survey (1,500 random files on the share)
 
-60 % `0x003` raw DXT5 · 27 % `0x103` QuickLZ+DXT5 · 9 % `0x100` QuickLZ+BGRA · 2 % `0x000` raw BGRA ·
+60 % `0x003` raw DXT5 · 27 % `0x103` QuickLZ+DXT5 · 9 % `0x100` QuickLZ+RGBA · 2 % `0x000` raw RGBA ·
 2 % empty/truncated files. No other variant seen.
 
 ## Verified
 
-a 436×180 stripe logo (QLZ+BGRA), a 132×132 logo bug (DXT5), another 132×132 logo bug (QLZ+DXT5)
+a 436×180 stripe logo (QLZ+RGBA), a 132×132 logo bug (DXT5), another 132×132 logo bug (QLZ+DXT5)
 and an 884×144 background (QLZ+DXT5) — all
 decode to correct, upright images with alpha.
 

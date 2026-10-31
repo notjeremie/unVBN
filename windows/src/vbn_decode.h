@@ -16,7 +16,7 @@ constexpr uint32_t kMaxDimension = 16384;
 
 struct Header {
     uint32_t width = 0, height = 0;
-    bool dxt5 = false;        // else BGRA8888
+    bool dxt5 = false;        // else RGBA8888 (byte order R, G, B, A)
     bool compressed = false;  // QuickLZ 1.5 level 3
     uint32_t payloadSize = 0;
 

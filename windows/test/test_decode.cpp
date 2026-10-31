@@ -40,9 +40,9 @@ static void check4x4(const vbn::Image& img) {
         for (int x = 0; x < 4; ++x) CHECK(pixel(img, x, y) == fx::expectedBGRA4x4(x, y), "4x4 pixel");
 }
 
-static void testRawBGRA() {
+static void testRawRGBA() {
     vbn::Image img;
-    CHECK(decodeOK(fx::makeVBN(4, 4, 0x000, fx::bgra4x4Stored()), img), "raw decode");
+    CHECK(decodeOK(fx::makeVBN(4, 4, 0x000, fx::rgba4x4Stored()), img), "raw decode");
     check4x4(img);
 }
 
@@ -67,7 +67,7 @@ static void testDXT5() {
 }
 
 static void testQuickLZ() {
-    auto stored = fx::bgra4x4Stored();
+    auto stored = fx::rgba4x4Stored();
     auto qlz = fx::qlzAllLiterals(stored);
     CHECK(vbn::quicklzDecompress(qlz.data(), qlz.size(), 1 << 20) == stored, "qlz all literals");
     vbn::Image img;
@@ -111,7 +111,7 @@ static void testQuickLZ() {
 }
 
 static void testErrors() {
-    auto raw = fx::bgra4x4Stored();
+    auto raw = fx::rgba4x4Stored();
     CHECK(decodeFails(fx::makeVBN(4, 4, 0, raw, 0x12345678)), "bad magic");
     CHECK(decodeFails({0x89, 0x50, 0x4E, 0x47}), "png bytes");
     auto full = fx::makeVBN(4, 4, 0, raw);
@@ -142,7 +142,7 @@ static int dump(const char* in, const char* out) {
 
 int main(int argc, char** argv) {
     if (argc == 4 && std::string(argv[1]) == "dump") return dump(argv[2], argv[3]);
-    testRawBGRA();
+    testRawRGBA();
     testDXT5();
     testQuickLZ();
     testErrors();

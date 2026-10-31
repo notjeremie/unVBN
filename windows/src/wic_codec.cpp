@@ -27,7 +27,7 @@ HMODULE g_module = nullptr;
 std::atomic<long> g_objects{0};
 std::atomic<long> g_locks{0};
 
-/// Header plus the largest legal raw BGRA payload (16384 x 16384 x 4).
+/// Header plus the largest legal uncompressed RGBA payload (16384 x 16384 x 4).
 constexpr ULONGLONG kMaxFileSize = vbn::kHeaderSize + ULONGLONG(vbn::kMaxDimension) * vbn::kMaxDimension * 4;
 
 // MARK: - Frame

@@ -3,11 +3,11 @@ import XCTest
 @testable import VBNCore
 @testable import VBNExport
 
-/// Raw BGRA `.vbn` (format 0, uncompressed) filled with one straight-alpha RGBA colour.
+/// Uncompressed `.vbn` (format 0, bytes R, G, B, A) filled with one straight-alpha colour.
 private func solidVBN(width: Int, height: Int, rgba: (UInt8, UInt8, UInt8, UInt8)) -> Data {
     var payload = [UInt8]()
     payload.reserveCapacity(width * height * 4)
-    for _ in 0 ..< width * height { payload += [rgba.2, rgba.1, rgba.0, rgba.3] }
+    for _ in 0 ..< width * height { payload += [rgba.0, rgba.1, rgba.2, rgba.3] }
     return makeVBN(width: width, height: height, format: 0, payload: payload)
 }
 

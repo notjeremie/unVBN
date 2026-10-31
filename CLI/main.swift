@@ -111,7 +111,7 @@ if infoOnly {
     for seq in sequences {
         var line = "\(seq.name): \(seq.frames.count) frame\(seq.frames.count == 1 ? "" : "s") in \(seq.directory.path)"
         if let h = header(of: seq.frames[0].url) {
-            line += ", \(h.width)×\(h.height) \(h.pixelFormat == .dxt5 ? "DXT5" : "BGRA")\(h.compressed ? " QuickLZ" : "")"
+            line += ", \(h.width)×\(h.height) \(h.pixelFormat == .dxt5 ? "DXT5" : "RGBA")\(h.compressed ? " QuickLZ" : "")"
         }
         let missing = seq.missingNumbers
         if !missing.isEmpty { line += ", \(missing.count) missing frame number(s)" }

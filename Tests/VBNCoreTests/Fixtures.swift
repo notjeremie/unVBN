@@ -29,21 +29,21 @@ func qlzAllLiterals(_ data: [UInt8]) -> [UInt8] {
     return qlzBlock(body: body, dsize: data.count)
 }
 
-/// 4x4 BGRA test pixels in STORED (bottom-up) order. Stored row r, column x:
-/// B = x, G = r, R = 0x10 * (x + 1) + r, A = 0x80 + 4 * r + x.
-let bgra4x4Stored: [UInt8] = {
+/// 4x4 RGBA test pixels in STORED (bottom-up) order, byte order R, G, B, A. Stored row r, column x:
+/// R = 0x10 * (x + 1) + r, G = r, B = x, A = 0x80 + 4 * r + x.
+let rgba4x4Stored: [UInt8] = {
     var out = [UInt8]()
     for r in 0 ..< 4 {
         for x in 0 ..< 4 {
             let red: Int = 0x10 * (x + 1) + r
             let alpha: Int = 0x80 + 4 * r + x
-            out += [UInt8(x), UInt8(r), UInt8(red), UInt8(alpha)]
+            out += [UInt8(red), UInt8(r), UInt8(x), UInt8(alpha)]
         }
     }
     return out
 }()
 
-/// Expected upright RGBA for `bgra4x4Stored`: upright row y = stored row 3 - y.
+/// Expected upright RGBA for `rgba4x4Stored`: upright row y = stored row 3 - y.
 func expectedRGBA4x4(x: Int, y: Int) -> [UInt8] {
     let r = 3 - y
     let red: Int = 0x10 * (x + 1) + r

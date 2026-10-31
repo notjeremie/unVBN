@@ -42,6 +42,8 @@ if __name__ == '__main__':
             ok = len(px) == hd['w'] * hd['h'] * hd['bpp']
             print(f.split('/')[-1], hd, 'qlz hdr', b[0xc0:0xc9].hex(), 'out', len(px), 'OK' if ok else 'SIZE MISMATCH')
             if ok and hd['bpp'] == 4:
-                bgra = px; rgba = bytearray(len(bgra)); rgba[0::4] = bgra[2::4]; rgba[1::4] = bgra[1::4]; rgba[2::4] = bgra[0::4]; rgba[3::4] = bgra[3::4]
-                png(f[:-4] + '.png', hd['w'], hd['h'], bytes(rgba))
+                # Uncompressed pixels are already R, G, B, A; rows are stored bottom-up, so flip them.
+                row = hd['w'] * 4
+                upright = b''.join(px[y * row:(y + 1) * row] for y in range(hd['h'] - 1, -1, -1))
+                png(f[:-4] + '.png', hd['w'], hd['h'], upright)
         except Exception as e: print(f.split('/')[-1], hd, 'ERR', repr(e), b[0xc0:0xc9].hex())

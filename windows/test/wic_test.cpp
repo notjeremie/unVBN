@@ -93,7 +93,7 @@ private:
     size_t pos_ = 0;
 };
 
-/// A 256x256 raw BGRA frame: 256 KB, far over one 64 KB read, with a gradient and varying alpha.
+/// A 256x256 raw RGBA frame: 256 KB, far over one 64 KB read, with a gradient and varying alpha.
 static Bytes bigFrame() {
     Bytes px;
     px.reserve(256 * 256 * 4);
@@ -194,7 +194,7 @@ int wmain(int argc, wchar_t** argv) {
         if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))))
             return 2;
 
-        const Bytes raw = fx::makeVBN(4, 4, 0x000, fx::bgra4x4Stored());
+        const Bytes raw = fx::makeVBN(4, 4, 0x000, fx::rgba4x4Stored());
         const std::wstring rawPath = writeTemp(L"unvbn_wic_raw.vbn", raw);
 
         if (expectMissing) {
@@ -208,7 +208,7 @@ int wmain(int argc, wchar_t** argv) {
             Com<IWICComponentInfo> info;
             CHECK(SUCCEEDED(factory->CreateComponentInfo(CLSID_UnVBNDecoder, &info)), "codec registered with WIC");
 
-            checkThroughWIC(factory.p, rawPath, raw, "raw BGRA 4x4");
+            checkThroughWIC(factory.p, rawPath, raw, "raw RGBA 4x4");
             const Bytes dxt = fx::makeVBN(8, 4, 0x003, fx::dxt8x4());
             checkThroughWIC(factory.p, writeTemp(L"unvbn_wic_dxt5.vbn", dxt), dxt, "DXT5 8x4");
             const Bytes qlz = fx::makeVBN(8, 4, 0x103, fx::qlzAllLiterals(fx::dxt8x4()));
@@ -218,7 +218,7 @@ int wmain(int argc, wchar_t** argv) {
             // Bigger than one 64 KB read, from a file and from a stream returning 1000 bytes per Read.
             const Bytes big = bigFrame();
             const std::wstring bigPath = writeTemp(L"unvbn_wic_big.vbn", big);
-            checkThroughWIC(factory.p, bigPath, big, "256x256 raw BGRA (256 KB)");
+            checkThroughWIC(factory.p, bigPath, big, "256x256 raw RGBA (256 KB)");
             checkThroughShortReads(factory.p, big, 1000, "256 KB through 1000-byte reads");
             checkThroughShortReads(factory.p, dxt, 7, "DXT5 through 7-byte reads (header split)");
             std::printf("-- Explorer thumbnails\n");

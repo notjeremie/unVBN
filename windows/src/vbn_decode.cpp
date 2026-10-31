@@ -163,8 +163,14 @@ bool decode(const uint8_t* data, size_t size, Image& image, std::string& error) 
         const uint32_t w = h.width, hh = h.height;
         const size_t row = size_t(w) * 4;
         std::vector<uint8_t> stored(row * hh);
-        if (h.dxt5) decodeBC3(pixels, w, hh, stored.data());
-        else std::memcpy(stored.data(), pixels, stored.size());  // already BGRA
+        if (h.dxt5) {
+            decodeBC3(pixels, w, hh, stored.data());
+        } else {  // stored R, G, B, A -> B, G, R, A
+            for (size_t i = 0; i < stored.size(); i += 4) {
+                stored[i] = pixels[i + 2]; stored[i + 1] = pixels[i + 1];
+                stored[i + 2] = pixels[i]; stored[i + 3] = pixels[i + 3];
+            }
+        }
 
         // Rows are stored bottom-up (OpenGL): flip.
         image.width = w; image.height = hh;
