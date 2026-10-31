@@ -79,17 +79,27 @@ open file.vbn                                   # PNG opens in Preview
 Without `-x`, `qlmanage -t` computes thumbnails in-process, and on this Mac that hung for app-extension
 thumbnailers. Finder always goes through the server, so use `-x`.
 
-## Signing and distribution (later)
+## Install from a release
 
-Builds are currently **ad-hoc signed** (`CODE_SIGN_IDENTITY = -`, no team). They run on the Mac that
-built them. To give the app to other Macs:
+Download `unVBN-<version>.dmg` from [Releases](https://github.com/notjeremie/unVBN/releases), drag
+**unVBN** to Applications, launch it once (this registers the `.vbn` type and the Quick Look extensions),
+then quit it. Space bar and thumbnails work in Finder from then on. Releases are signed with a Developer ID
+and notarized by Apple.
 
-1. Set `DEVELOPMENT_TEAM` and `CODE_SIGN_IDENTITY = "Developer ID Application"` in `project.yml`,
-   and set `ENABLE_HARDENED_RUNTIME: YES`. The extensions keep `com.apple.security.app-sandbox`.
-2. Archive, then export with the Developer ID method (`xcodebuild -exportArchive`).
-3. Notarize: `xcrun notarytool submit unVBN.zip --keychain-profile <profile> --wait`, then
-   `xcrun stapler staple unVBN.app`.
-4. Ship as a zip or dmg. Users copy it to `/Applications` and launch it once.
+## Signing and distribution
+
+`project.yml` uses **ad-hoc signing** (`CODE_SIGN_IDENTITY = -`, no team), so anyone can build and run
+locally. `scripts/release.sh` builds the distributable dmg: it passes the Developer ID settings on the
+command line (team, hardened runtime, secure timestamp, no `get-task-allow`), verifies the signature,
+packages and signs the dmg, then notarizes and staples it.
+
+```sh
+xcrun notarytool store-credentials <profile> --apple-id <apple-id> --team-id <TEAM_ID>   # once
+TEAM_ID=<TEAM_ID> NOTARY_PROFILE=<profile> scripts/release.sh                            # -> build/release/
+```
+
+It builds in `$TMPDIR`, not in the repo: iCloud Drive tags files under `~/Documents` with
+`com.apple.FinderInfo`, which `codesign --strict` and notarization reject.
 
 The app icon is drawn in code: `scripts/make-icon.sh` runs `scripts/make-icon.swift` and rebuilds
 `App/Assets.xcassets/AppIcon.appiconset` and `docs/icon.png`.
