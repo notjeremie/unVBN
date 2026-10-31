@@ -11,8 +11,11 @@ final class ExportModel: ObservableObject {
     @Published var sequences: [FrameSequence] = []
     @Published var selected = 0
     @Published private(set) var isBatch = false
-    /// While a batch runs: the sequence being exported (1-based) and how many there are.
-    @Published private(set) var batchPosition: (current: Int, count: Int)?
+    /// Missing frame numbers per sequence, counted once at load (the view redraws on every progress tick).
+    @Published private(set) var missingCounts: [Int] = []
+    /// While a batch runs: the sequence being exported, 1-based.
+    @Published private(set) var batchIndex: Int?
+    private var isLoading = false
     @Published var format: ExportFormat = .webm
     @Published var fps: Double = 50
     @Published var background: Color = .black
@@ -27,100 +30,96 @@ final class ExportModel: ObservableObject {
 
     var sequence: FrameSequence? { sequences.indices.contains(selected) ? sequences[selected] : nil }
     var isRunning: Bool { progress != nil }
-    var totalFrames: Int { sequences.reduce(0) { $0 + $1.frames.count } }
 
-    /// Loads what was dropped or opened. Several items make a batch; an item without frames is skipped
-    /// and reported, the others still load.
+    /// Frames and missing frame numbers of what Export exports: every sequence in a batch, else the selected one.
+    var frameCounts: (frames: Int, missing: Int) {
+        let shown = isBatch ? Array(sequences.indices) : sequences.indices.contains(selected) ? [selected] : []
+        return shown.reduce((0, 0)) { ($0.0 + sequences[$1].frames.count, $0.1 + missingCounts[$1]) }
+    }
+
+    /// Loads what was dropped or opened, scanning the folders off the main thread (they may be on a network
+    /// share). Several items make a batch; an item without frames is skipped and reported, the others load.
     func load(_ urls: [URL]) {
-        guard !isRunning, !urls.isEmpty else { return }
+        guard !isRunning, !isLoading, !urls.isEmpty else { return }
+        isLoading = true
+        Task {
+            let scan = await Task.detached(priority: .userInitiated) { Self.scan(urls) }.value
+            isLoading = false
+            status = nil; lastOutputs = []
+            errorMessage = scan.problems.isEmpty ? nil : scan.problems.joined(separator: "\n")
+            guard !scan.found.isEmpty else { return }
+            sequences = scan.found
+            missingCounts = scan.found.map(\.missingNumbers.count)
+            selected = 0
+            isBatch = urls.count > 1
+        }
+    }
+
+    private nonisolated static func scan(_ urls: [URL]) -> (found: [FrameSequence], problems: [String]) {
         var found: [FrameSequence] = [], problems: [String] = []
         for url in urls {
             do { found += try FrameSequence.find(at: url) } catch { problems.append(error.localizedDescription) }
         }
-        status = nil; lastOutputs = []
-        errorMessage = problems.isEmpty ? nil : problems.joined(separator: "\n")
-        guard !found.isEmpty else { return }
-        sequences = found
-        selected = 0
-        isBatch = urls.count > 1
+        return (found, problems)
     }
 
     func chooseAndExport() {
         guard !isRunning else { return }
-        let batch: [(FrameSequence, URL)]
+        let jobs: [BatchExporter.Job]
         if isBatch {
             guard let outputs = askBatchDestination() else { return }
-            batch = Array(zip(sequences, outputs))
+            jobs = zip(sequences, outputs).map { ($0, $1) }
         } else {
             guard let sequence, let output = askDestination(for: sequence) else { return }
-            batch = [(sequence, output)]
+            jobs = [(sequence, output)]
         }
         var options = ExportOptions(format: format, fps: fps)
         options.background = rgb(background)
 
-        let total = batch.reduce(0) { $0 + $1.0.frames.count }
-        progress = ExportProgress(done: 0, total: total, elapsed: 0)
-        batchPosition = isBatch ? (1, batch.count) : nil
+        progress = ExportProgress(done: 0, total: jobs.reduce(0) { $0 + $1.sequence.frames.count }, elapsed: 0)
+        batchIndex = nil
         status = nil; lastOutputs = []; errorMessage = nil
-        let ffmpeg = self.ffmpeg
+        let exporter = BatchExporter(jobs: jobs, options: options, ffmpeg: ffmpeg)
+        let isBatch = self.isBatch
         job = Task.detached(priority: .userInitiated) { [weak self] in
             let start = Date()
-            var framesBefore = 0
-            var exported: [URL] = [], failures: [String] = [], cancelled = false
-            for (index, (sequence, output)) in batch.enumerated() {
-                if Task.isCancelled { cancelled = true; break }
-                await self?.setBatchPosition(index + 1, of: batch.count)
-                let offset = framesBefore
-                do {
-                    // Progress covers the whole batch, so the bar, fps and time left never jump back.
-                    try SequenceExporter(sequence: sequence, options: options, output: output, ffmpeg: ffmpeg).run(
-                        progress: { p in
-                            let overall = ExportProgress(done: offset + p.done, total: total,
-                                                         elapsed: Date().timeIntervalSince(start))
-                            Task { @MainActor in if self?.isRunning == true { self?.progress = overall } }
-                        },
-                        isCancelled: { Task.isCancelled })
-                    exported.append(output)
-                } catch ExportError.cancelled {
-                    cancelled = true
-                    break
-                } catch {
-                    failures.append(batch.count > 1 ? "\(sequence.name): \(error.localizedDescription)" : error.localizedDescription)
+            let result = exporter.run({ event in
+                switch event {
+                case .started(let index) where isBatch:
+                    Task { @MainActor in self?.batchIndex = index + 1 }
+                case let .progress(_, overall, _):
+                    Task { @MainActor in if self?.isRunning == true { self?.progress = overall } }
+                default: break
                 }
-                framesBefore += sequence.frames.count
-            }
-            await self?.finish(exported: exported, failures: failures, count: batch.count, cancelled: cancelled,
-                               seconds: Date().timeIntervalSince(start))
+            }, isCancelled: { Task.isCancelled })
+            await self?.finish(result, count: jobs.count, seconds: Date().timeIntervalSince(start))
         }
     }
 
     func cancel() { job?.cancel() }
 
-    private func setBatchPosition(_ current: Int, of count: Int) {
-        if count > 1 { batchPosition = (current, count) }
-    }
-
-    private func finish(exported: [URL], failures: [String], count: Int, cancelled: Bool, seconds: TimeInterval) {
-        progress = nil; batchPosition = nil; job = nil
-        lastOutputs = exported
-        errorMessage = failures.isEmpty ? nil : failures.joined(separator: "\n")
-        let time = String(format: "%.1f s", seconds)
+    private func finish(_ result: BatchExporter.Result, count: Int, seconds: TimeInterval) {
+        progress = nil; batchIndex = nil; job = nil
+        lastOutputs = result.exported
+        errorMessage = result.failures.isEmpty ? nil : result.failures.map {
+            count > 1 ? "\($0.sequence.name): \($0.error.localizedDescription)" : $0.error.localizedDescription
+        }.joined(separator: "\n")
+        let time = String(format: "%.1f s", seconds), exported = result.exported.count
         if count == 1 {
-            if let output = exported.first { status = "Exported \(output.lastPathComponent) in \(time)." }
-        } else if cancelled {
-            status = "Cancelled after \(exported.count) of \(count) sequences."
+            if let output = result.exported.first { status = "Exported \(output.lastPathComponent) in \(time)." }
+        } else if result.cancelled {
+            status = "Cancelled after \(exported) of \(count) sequences."
         } else {
-            status = exported.count == count ? "Exported \(count) sequences in \(time)."
-                                             : "Exported \(exported.count) of \(count) sequences in \(time)."
+            status = exported == count ? "Exported \(count) sequences in \(time)." : "Exported \(exported) of \(count) sequences in \(time)."
         }
-        if !cancelled, !exported.isEmpty { NSApp.requestUserAttention(.informationalRequest) }
+        if !result.cancelled, exported > 0 { NSApp.requestUserAttention(.informationalRequest) }
     }
 
     /// "Sequence 2 / 5 · Rendering frame 312 / 750 · 85 fps · 3 s left" (frames counted over the whole batch)
     var progressLabel: String {
         guard let p = progress else { return "" }
         var parts = ["Rendering frame \(p.done) / \(p.total)"]
-        if let b = batchPosition { parts.insert("Sequence \(b.current) / \(b.count)", at: 0) }
+        if let i = batchIndex { parts.insert("Sequence \(i) / \(sequences.count)", at: 0) }
         if let fps = p.framesPerSecond { parts.append(String(format: "%.0f fps", fps)) }
         if let left = p.remaining { parts.append(left < 1 ? "almost done" : ExportProgress.formatDuration(left) + " left") }
         return parts.joined(separator: " · ")
@@ -254,10 +253,6 @@ struct MainView: View {
                         .lineLimit(2).truncationMode(.tail)
                         .help(model.sequences.map { "\($0.name) (\($0.frames.count))" }.joined(separator: "\n"))
                 }
-                LabeledContent("Frames") {
-                    let missing = model.sequences.reduce(0) { $0 + $1.missingNumbers.count }
-                    Text("\(model.totalFrames)" + (missing > 0 ? " (\(missing) missing, skipped)" : ""))
-                }
             } else if model.sequences.count > 1 {
                 Picker("Sequence", selection: $model.selected) {
                     ForEach(model.sequences.indices, id: \.self) { i in
@@ -267,11 +262,9 @@ struct MainView: View {
             } else {
                 LabeledContent("Sequence", value: seq.name)
             }
-            if !model.isBatch {
-                LabeledContent("Frames") {
-                    let missing = seq.missingNumbers.count
-                    Text("\(seq.frames.count)" + (missing > 0 ? " (\(missing) missing, skipped)" : ""))
-                }
+            LabeledContent("Frames") {
+                let counts = model.frameCounts
+                Text("\(counts.frames)" + (counts.missing > 0 ? " (\(counts.missing) missing, skipped)" : ""))
             }
             Picker("Format", selection: $model.format) {
                 ForEach(ExportFormat.allCases) { f in

@@ -52,12 +52,12 @@ public enum ExportFormat: String, CaseIterable, Identifiable {
     /// Default outputs for several sequences: each next to its own folder, as `defaultOutput`, with
     /// shared names told apart as in `batchOutputs`.
     public func defaultOutputs(for sequences: [FrameSequence]) -> [URL] {
-        var outputs = [URL?](repeating: nil, count: sequences.count)
+        var outputs = sequences.map(defaultOutput(for:))
         let byParent = Dictionary(grouping: sequences.indices) { sequences[$0].directory.deletingLastPathComponent().standardizedFileURL }
         for (parent, indices) in byParent {
             for (i, url) in zip(indices, batchOutputs(for: indices.map { sequences[$0] }, in: parent)) { outputs[i] = url }
         }
-        return outputs.map { $0! }
+        return outputs
     }
 
     /// `folder/NAME.ext`, or the folder `folder/NAME_png` for PNG.

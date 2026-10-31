@@ -124,22 +124,23 @@ if infoOnly {
 if outputPath != nil, sequences.count > 1 { fail("-o works with a single sequence; \(sequences.count) were found") }
 
 let outputs = outputPath.map { [URL(fileURLWithPath: $0)] } ?? options.format.defaultOutputs(for: sequences)
-var failures = 0
-for (seq, out) in zip(sequences, outputs) {
-    let missing = seq.missingNumbers
-    if !missing.isEmpty {
-        eprint("unvbn: warning: \(seq.name) has \(missing.count) missing frame number(s); they are skipped")
-    }
-    eprint("\(seq.name): \(seq.frames.count) frames -> \(out.path)")
-    let start = Date()
-    let bar = ProgressBar()
-    do {
-        try SequenceExporter(sequence: seq, options: options, output: out).run(progress: bar.update)
-        bar.finish(frames: seq.frames.count, seconds: Date().timeIntervalSince(start))
-    } catch {
+let jobs = zip(sequences, outputs).map { (sequence: $0, output: $1) }
+var bar = ProgressBar(), start = Date()
+let result = BatchExporter(jobs: jobs, options: options).run { event in
+    switch event {
+    case .started(let i):
+        let (seq, out) = jobs[i]
+        let missing = seq.missingNumbers
+        if !missing.isEmpty {
+            eprint("unvbn: warning: \(seq.name) has \(missing.count) missing frame number(s); they are skipped")
+        }
+        eprint("\(seq.name): \(seq.frames.count) frames -> \(out.path)")
+        bar = ProgressBar(); start = Date()
+    case let .progress(_, _, current): bar.update(current)
+    case let .finished(i, nil): bar.finish(frames: jobs[i].sequence.frames.count, seconds: Date().timeIntervalSince(start))
+    case let .finished(i, error?):
         bar.interrupt()
-        eprint("unvbn: \(seq.name): \(error.localizedDescription)")
-        failures += 1
+        eprint("unvbn: \(jobs[i].sequence.name): \(error.localizedDescription)")
     }
 }
-exit(failures == 0 ? 0 : 1)
+exit(result.failures.isEmpty ? 0 : 1)

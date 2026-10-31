@@ -357,3 +357,64 @@ public enum FFmpeg {
         fps == fps.rounded() ? String(Int(fps)) : String(fps)
     }
 }
+
+/// Exports several sequences one after the other with the same options, as the app's batch export and the
+/// CLI do. A sequence that fails is recorded and the next one runs; cancelling stops the batch.
+public struct BatchExporter {
+    public typealias Job = (sequence: FrameSequence, output: URL)
+
+    public enum Event {
+        /// Job `index` (0-based) begins.
+        case started(index: Int)
+        /// `overall` counts the frames of the whole batch, so a bar, rate and time left never jump back;
+        /// `current` counts those of the running job.
+        case progress(index: Int, overall: ExportProgress, current: ExportProgress)
+        /// Job `index` ended; `error` is nil when it succeeded.
+        case finished(index: Int, error: Error?)
+    }
+
+    public struct Result {
+        public var exported: [URL] = []
+        public var failures: [(sequence: FrameSequence, error: Error)] = []
+        public var cancelled = false
+    }
+
+    public let jobs: [Job]
+    public let options: ExportOptions
+    private let ffmpeg: URL?
+
+    public init(jobs: [Job], options: ExportOptions, ffmpeg: URL? = FFmpeg.locate()) {
+        self.jobs = jobs; self.options = options; self.ffmpeg = ffmpeg
+    }
+
+    /// Synchronous, like `SequenceExporter.run`: call it off the main thread.
+    public func run(_ handle: (Event) -> Void = { _ in }, isCancelled: () -> Bool = { false }) -> Result {
+        let total = jobs.reduce(0) { $0 + $1.sequence.frames.count }
+        let start = Date()
+        var result = Result(), framesBefore = 0
+        for (index, job) in jobs.enumerated() {
+            if isCancelled() { result.cancelled = true; break }
+            handle(.started(index: index))
+            let offset = framesBefore
+            do {
+                try SequenceExporter(sequence: job.sequence, options: options, output: job.output, ffmpeg: ffmpeg).run(
+                    progress: { p in
+                        let overall = ExportProgress(done: offset + p.done, total: total, elapsed: Date().timeIntervalSince(start))
+                        handle(.progress(index: index, overall: overall, current: p))
+                    },
+                    isCancelled: isCancelled)
+                result.exported.append(job.output)
+                handle(.finished(index: index, error: nil))
+            } catch ExportError.cancelled {
+                result.cancelled = true
+                handle(.finished(index: index, error: ExportError.cancelled))
+                break
+            } catch {
+                result.failures.append((job.sequence, error))
+                handle(.finished(index: index, error: error))
+            }
+            framesBefore += job.sequence.frames.count
+        }
+        return result
+    }
+}

@@ -191,6 +191,38 @@ final class ExportTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: out.path))
     }
 
+    func testBatchContinuesAfterFailureAndCountsAllFrames() throws {
+        let a = try makeSequence("A", count: 4), bad = try makeSequence("BAD", count: 3), c = try makeSequence("C", count: 5)
+        try Data("not a vbn".utf8).write(to: bad.frames[1].url)
+        let jobs = [a, bad, c].map { (sequence: $0, output: dir.appendingPathComponent($0.name, isDirectory: true)) }
+        var events: [String] = [], overall: [Int] = []
+        let result = BatchExporter(jobs: jobs, options: .init(format: .png)).run { event in
+            switch event {
+            case .started(let i): events.append("start \(i)")
+            case let .progress(_, o, _): overall.append(o.done); XCTAssertEqual(o.total, 12)
+            case let .finished(i, error): events.append("end \(i)" + (error == nil ? "" : " failed"))
+            }
+        }
+        XCTAssertEqual(events, ["start 0", "end 0", "start 1", "end 1 failed", "start 2", "end 2"])
+        XCTAssertEqual(result.exported, [jobs[0].output, jobs[2].output])
+        XCTAssertEqual(result.failures.map(\.sequence.name), ["BAD"])
+        XCTAssertFalse(result.cancelled)
+        XCTAssertEqual(overall, overall.sorted(), "batch progress never goes back")
+        XCTAssertEqual(overall.last, 12)
+    }
+
+    func testBatchCancelStopsTheRest() throws {
+        let a = try makeSequence("A", count: 4), b = try makeSequence("B", count: 30, width: 16, height: 16)
+        let jobs = [a, b].map { (sequence: $0, output: dir.appendingPathComponent($0.name + ".mp4")) }
+        var done = 0
+        let result = BatchExporter(jobs: jobs, options: .init(format: .mp4)).run({ event in
+            if case let .progress(_, o, _) = event { done = o.done }
+        }, isCancelled: { done >= 8 })
+        XCTAssertTrue(result.cancelled)
+        XCTAssertEqual(result.exported, [jobs[0].output])
+        XCTAssertTrue(result.failures.isEmpty)
+    }
+
     func testSizeMismatch() throws {
         let seq = try makeSequence(count: 3, width: 8, height: 8)
         try solidVBN(width: 4, height: 4, rgba: (0, 0, 0, 255)).write(to: seq.frames[2].url)

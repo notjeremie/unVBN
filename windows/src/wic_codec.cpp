@@ -586,7 +586,6 @@ void unregisterShell() {
     deleteTree(kThumbnailKey);
     deleteTree(kPreviewKey);
     deleteEmptyKeys(kSystemAssocKey + L"\\ShellEx\\ContextMenuHandlers", kClasses + L"SystemFileAssociations");
-    deleteEmptyKeys(kSystemAssocKey + L"\\ShellEx", kClasses + L"SystemFileAssociations");
     if (readString(kKindMapKey, L".vbn", current) && current == L"picture") deleteValue(kKindMapKey, L".vbn");
 }
 
