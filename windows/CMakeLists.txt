@@ -1,5 +1,5 @@
 # unVBN for Windows: a WIC codec (unvbn_wic.dll) so Windows can open Vizrt .vbn images, plus tests.
-#   cmake -S windows -B build -A x64 -DUNVBN_VERSION=0.3.0 && cmake --build build --config Release
+#   cmake -S windows -B build -A x64 -DUNVBN_VERSION=0.3.1 && cmake --build build --config Release
 # On macOS/Linux only the portable decoder test builds (used to check against real samples).
 cmake_minimum_required(VERSION 3.21)
 project(unvbn_windows LANGUAGES CXX)

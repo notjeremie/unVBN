@@ -154,7 +154,7 @@ with `regsvr32`, then installs and uninstalls the MSI and checks everything befo
 the run's artifacts. By hand, on Windows:
 
 ```bat
-cmake -S windows -B build -A x64 -DUNVBN_VERSION=0.3.0
+cmake -S windows -B build -A x64 -DUNVBN_VERSION=0.3.1
 cmake --build build --config Release
 regsvr32 build\Release\unvbn_wic.dll        &:: as administrator; regsvr32 /u to remove
 ```

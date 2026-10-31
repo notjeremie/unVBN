@@ -1,6 +1,6 @@
 <!--
   unVBN for Windows: installs the WIC codec so Windows can open Vizrt .vbn images.
-  Built in CI:  wix build unVBN.wxs -arch x64|arm64 -d Version=0.3.0 -d DllPath=...\unvbn_wic.dll -d RepoRoot=...
+  Built in CI:  wix build unVBN.wxs -arch x64|arm64 -d Version=0.3.1 -d DllPath=...\unvbn_wic.dll -d RepoRoot=...
   Registration: the DLL's own DllRegisterServer/DllUnregisterServer (SelfReg), the single source of truth
   for its registry entries, also used by `regsvr32`.
 -->
