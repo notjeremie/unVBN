@@ -106,8 +106,7 @@ targets:
             exit 0
           fi
           mkdir -p "$dst"
-          ditto "$src" "$dst/ffmpeg"
-          xattr -c "$dst/ffmpeg"
+          ditto --noextattr "$src" "$dst/ffmpeg"
           runtime=""; [ "${ENABLE_HARDENED_RUNTIME:-NO}" = YES ] && runtime="--options runtime"
           codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}" --identifier com.notjeremie.unvbn.ffmpeg $runtime ${OTHER_CODE_SIGN_FLAGS:-} "$dst/ffmpeg"
 

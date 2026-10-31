@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 import VBNCore
@@ -25,11 +26,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
     private var openedFiles = false
     private lazy var exportModel = ExportModel()
+    private var progressObserver: AnyCancellable?
     /// The last .vbn opened, for "Export PNG...".
     private(set) var lastOpened: URL?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = makeMainMenu()
+        // One source of truth for render progress: the window title and the Dock tile follow the model.
+        progressObserver = exportModel.$progress.sink { [weak self] p in
+            self?.window?.title = p.map { "unVBN \u{2014} Rendering \($0.percent) %" } ?? "unVBN"
+            DockProgress.shared.update(p?.fraction)
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -143,7 +150,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 400),
                              styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
             w.title = "unVBN"
-            w.identifier = NSUserInterfaceItemIdentifier("main")
             w.isReleasedWhenClosed = false
             w.contentView = NSHostingView(rootView: MainView(
                 model: exportModel,

@@ -11,16 +11,14 @@ final class ExportModel: ObservableObject {
     @Published var format: ExportFormat = .webm
     @Published var fps: Double = 50
     @Published var background: Color = .black
-    @Published private(set) var progress: Double?
-    @Published private(set) var framesDone = 0
-    @Published private(set) var framesTotal = 0
-    private var renderStart = Date()
+    /// The running export's progress; nil when idle. AppDelegate observes it for the window title and Dock tile.
+    @Published private(set) var progress: ExportProgress?
     @Published private(set) var status: String?
     @Published private(set) var lastOutput: URL?
     @Published var errorMessage: String?
 
     let ffmpeg = FFmpeg.locate()
-    private var cancelFlag = CancelFlag()
+    private var job: Task<Void, Never>?
 
     var sequence: FrameSequence? { sequences.indices.contains(selected) ? sequences[selected] : nil }
     var isRunning: Bool { progress != nil }
@@ -41,62 +39,41 @@ final class ExportModel: ObservableObject {
         var options = ExportOptions(format: format, fps: fps)
         options.background = rgb(background)
 
-        let flag = CancelFlag()
-        cancelFlag = flag
-        progress = 0; framesDone = 0; framesTotal = sequence.frames.count; renderStart = Date()
+        progress = ExportProgress(done: 0, total: sequence.frames.count, elapsed: 0)
         status = nil; lastOutput = nil; errorMessage = nil
-        DockProgress.shared.update(0)
         let ffmpeg = self.ffmpeg
-        Task.detached(priority: .userInitiated) {
+        job = Task.detached(priority: .userInitiated) { [weak self] in
             let start = Date()
-            do {
+            let result = Result {
                 try SequenceExporter(sequence: sequence, options: options, output: output, ffmpeg: ffmpeg).run(
-                    progress: { done, total in Task { @MainActor in self.report(done, of: total) } },
-                    isCancelled: { flag.isSet })
-                let seconds = Date().timeIntervalSince(start)
-                await MainActor.run {
-                    self.progress = nil
-                    DockProgress.shared.update(nil)
-                    NSApp.requestUserAttention(.informationalRequest)
-                    self.lastOutput = output
-                    self.status = String(format: "Exported %@ in %.1f s.", output.lastPathComponent, seconds)
-                }
-            } catch {
-                await MainActor.run {
-                    self.progress = nil
-                    DockProgress.shared.update(nil)
-                    self.status = nil
-                    if (error as? ExportError) != .cancelled { self.errorMessage = error.localizedDescription }
-                }
+                    progress: { p in Task { @MainActor in if self?.isRunning == true { self?.progress = p } } },
+                    isCancelled: { Task.isCancelled })
             }
+            await self?.finish(result, output: output, seconds: Date().timeIntervalSince(start))
         }
     }
 
-    func cancel() { cancelFlag.set() }
+    func cancel() { job?.cancel() }
 
-    private func report(_ done: Int, of total: Int) {
-        guard progress != nil else { return }   // a late update after the job ended
-        framesDone = done; framesTotal = total
-        progress = Double(done) / Double(max(total, 1))
-        DockProgress.shared.update(progress)
+    private func finish(_ result: Result<Void, Error>, output: URL, seconds: TimeInterval) {
+        progress = nil; job = nil
+        switch result {
+        case .success:
+            lastOutput = output
+            status = String(format: "Exported %@ in %.1f s.", output.lastPathComponent, seconds)
+            NSApp.requestUserAttention(.informationalRequest)
+        case .failure(let error):
+            if (error as? ExportError) != .cancelled { errorMessage = error.localizedDescription }
+        }
     }
 
     /// "Rendering frame 312 / 750 · 85 fps · 3 s left"
     var progressLabel: String {
-        var parts = ["Rendering frame \(framesDone) / \(framesTotal)"]
-        let elapsed = Date().timeIntervalSince(renderStart)
-        if framesDone > 0, elapsed > 0.3 {
-            let rate = Double(framesDone) / elapsed
-            parts.append(String(format: "%.0f fps", rate))
-            let left = Double(framesTotal - framesDone) / rate
-            parts.append(left < 1 ? "almost done" : Self.duration(left) + " left")
-        }
+        guard let p = progress else { return "" }
+        var parts = ["Rendering frame \(p.done) / \(p.total)"]
+        if let fps = p.framesPerSecond { parts.append(String(format: "%.0f fps", fps)) }
+        if let left = p.remaining { parts.append(left < 1 ? "almost done" : ExportProgress.formatDuration(left) + " left") }
         return parts.joined(separator: " · ")
-    }
-
-    static func duration(_ seconds: Double) -> String {
-        let s = Int(seconds.rounded(.up))
-        return s < 60 ? "\(s) s" : "\(s / 60) min \(s % 60) s"
     }
 
     func revealOutput() {
@@ -105,11 +82,11 @@ final class ExportModel: ObservableObject {
 
     private func askDestination(for sequence: FrameSequence) -> URL? {
         let suggested = format.defaultOutput(for: sequence)
-        if format.fileExtension != nil {
+        if let ext = format.fileExtension {
             let panel = NSSavePanel()
             panel.nameFieldStringValue = suggested.lastPathComponent
             panel.directoryURL = suggested.deletingLastPathComponent()
-            if let ext = format.fileExtension, let type = UTType(filenameExtension: ext) { panel.allowedContentTypes = [type] }
+            if let type = UTType(filenameExtension: ext) { panel.allowedContentTypes = [type] }
             return panel.runModal() == .OK ? panel.url : nil
         }
         // PNG: pick a parent folder; frames go into NAME_png/ inside it.
@@ -128,14 +105,6 @@ final class ExportModel: ObservableObject {
         func byte(_ v: CGFloat) -> UInt8 { UInt8(max(0, min(255, (v * 255).rounded()))) }
         return VBNExport.RGBColor(r: byte(c.redComponent), g: byte(c.greenComponent), b: byte(c.blueComponent))
     }
-}
-
-/// Thread-safe cancel switch read by the export thread.
-final class CancelFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var value = false
-    var isSet: Bool { lock.lock(); defer { lock.unlock() }; return value }
-    func set() { lock.lock(); value = true; lock.unlock() }
 }
 
 struct MainView: View {
@@ -217,11 +186,11 @@ struct MainView: View {
             if model.format != .png {
                 Picker("Frame rate", selection: $model.fps) {
                     ForEach([23.976, 24, 25, 29.97, 30, 50, 59.94, 60], id: \.self) { fps in
-                        Text(fps == fps.rounded() ? "\(Int(fps)) fps" : String(format: "%.3g fps", fps)).tag(fps)
+                        Text(FFmpeg.fpsString(fps) + " fps").tag(fps)
                     }
                 }
             }
-            if !model.format.keepsAlpha {
+            if model.format == .mp4 {
                 ColorPicker("Background", selection: $model.background, supportsOpacity: false)
             }
         }
@@ -231,13 +200,13 @@ struct MainView: View {
         HStack(spacing: 10) {
             if let progress = model.progress {
                 VStack(alignment: .leading, spacing: 4) {
-                    ProgressView(value: progress)
+                    ProgressView(value: progress.fraction)
                         .progressViewStyle(.linear)
-                        .animation(.linear(duration: 0.1), value: progress)
+                        .animation(.linear(duration: 0.1), value: progress.fraction)
                     HStack {
                         Text(model.progressLabel).monospacedDigit()
                         Spacer()
-                        Text("\(Int(progress * 100)) %").monospacedDigit()
+                        Text("\(progress.percent) %").monospacedDigit()
                     }
                     .font(.caption).foregroundStyle(.secondary)
                 }
@@ -262,14 +231,11 @@ struct MainView: View {
 final class DockProgress {
     static let shared = DockProgress()
     private var bar: NSProgressIndicator?
-    private var lastPercent = -1
-    private var mainWindow: NSWindow? { NSApp.windows.first { $0.identifier?.rawValue == "main" } }
 
     func update(_ fraction: Double?) {
         let tile = NSApp.dockTile
         guard let fraction else {
-            mainWindow?.title = "unVBN"
-            tile.contentView = nil; bar = nil; lastPercent = -1
+            tile.contentView = nil; bar = nil
             tile.display()
             return
         }
@@ -286,11 +252,6 @@ final class DockProgress {
             tile.contentView = icon
             self.bar = bar
         }
-        // Redraw the tile only when the visible percentage changes.
-        let percent = Int(fraction * 100)
-        guard percent != lastPercent else { return }
-        lastPercent = percent
-        mainWindow?.title = "unVBN \u{2014} Rendering \(percent) %"
         bar?.doubleValue = fraction
         tile.display()
     }

@@ -27,7 +27,6 @@ public enum ExportFormat: String, CaseIterable, Identifiable {
         }
     }
 
-    public var keepsAlpha: Bool { self != .mp4 }
     public var needsFFmpeg: Bool { self == .webm }
 
     /// Default output next to the sequence folder: `NAME.mp4`, or the folder `NAME_png`.
@@ -49,8 +48,6 @@ public struct RGBColor: Equatable {
         guard s.count == 6, let v = UInt32(s, radix: 16) else { return nil }
         self.init(r: UInt8(v >> 16 & 0xff), g: UInt8(v >> 8 & 0xff), b: UInt8(v & 0xff))
     }
-
-    public var hex: String { String(format: "#%02X%02X%02X", r, g, b) }
 }
 
 public struct ExportOptions: Equatable {
@@ -71,6 +68,7 @@ public enum ExportError: LocalizedError, Equatable {
     case notFound(URL)
     case noFrames(URL)
     case sizeMismatch(frame: String, expected: String, got: String)
+    case decodeFailed(frame: String, message: String)
     case invalidFPS(Double)
     case ffmpegMissing
     case ffmpegFailed(status: Int32, message: String)
@@ -83,6 +81,7 @@ public enum ExportError: LocalizedError, Equatable {
         case .noFrames(let url): return "No .vbn frames found at \(url.path)."
         case let .sizeMismatch(frame, expected, got):
             return "\(frame) is \(got), but the sequence is \(expected). All frames must have the same size."
+        case let .decodeFailed(frame, message): return "Could not read \(frame): \(message)"
         case .invalidFPS(let fps): return "Invalid frame rate: \(fps)."
         case .ffmpegMissing: return "WebM export needs ffmpeg, which was not found inside unVBN.app."
         case let .ffmpegFailed(status, message): return "ffmpeg failed (exit \(status)): \(message)"

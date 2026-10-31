@@ -626,7 +626,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "src=\"$PROJECT_DIR/build/ffmpeg/ffmpeg\"\ndst=\"$TARGET_BUILD_DIR/$WRAPPER_NAME/Contents/Helpers\"\nif [ ! -x \"$src\" ]; then\n  echo \"warning: build/ffmpeg/ffmpeg not found (run scripts/build-ffmpeg.sh): WebM export will be unavailable\"\n  exit 0\nfi\nmkdir -p \"$dst\"\nditto \"$src\" \"$dst/ffmpeg\"\nxattr -c \"$dst/ffmpeg\"\nruntime=\"\"; [ \"${ENABLE_HARDENED_RUNTIME:-NO}\" = YES ] && runtime=\"--options runtime\"\ncodesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY:--}\" --identifier com.notjeremie.unvbn.ffmpeg $runtime ${OTHER_CODE_SIGN_FLAGS:-} \"$dst/ffmpeg\"\n";
+			shellScript = "src=\"$PROJECT_DIR/build/ffmpeg/ffmpeg\"\ndst=\"$TARGET_BUILD_DIR/$WRAPPER_NAME/Contents/Helpers\"\nif [ ! -x \"$src\" ]; then\n  echo \"warning: build/ffmpeg/ffmpeg not found (run scripts/build-ffmpeg.sh): WebM export will be unavailable\"\n  exit 0\nfi\nmkdir -p \"$dst\"\nditto --noextattr \"$src\" \"$dst/ffmpeg\"\nruntime=\"\"; [ \"${ENABLE_HARDENED_RUNTIME:-NO}\" = YES ] && runtime=\"--options runtime\"\ncodesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY:--}\" --identifier com.notjeremie.unvbn.ffmpeg $runtime ${OTHER_CODE_SIGN_FLAGS:-} \"$dst/ffmpeg\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

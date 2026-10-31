@@ -3,10 +3,35 @@ import CoreVideo
 import Foundation
 import VBNCore
 
+/// Where an export stands, with the rate and time-left estimate both front ends display.
+public struct ExportProgress: Equatable {
+    public let done: Int
+    public let total: Int
+    public let elapsed: TimeInterval
+
+    public init(done: Int, total: Int, elapsed: TimeInterval) {
+        self.done = done; self.total = total; self.elapsed = elapsed
+    }
+
+    public var fraction: Double { Double(done) / Double(max(total, 1)) }
+    public var percent: Int { done * 100 / max(total, 1) }
+    /// Frames per second so far; nil for the first 0.3 s, when the figure is still noise.
+    public var framesPerSecond: Double? { done > 0 && elapsed > 0.3 ? Double(done) / elapsed : nil }
+    public var remaining: TimeInterval? { framesPerSecond.map { Double(total - done) / $0 } }
+
+    /// "3 s", "1 min 05 s".
+    public static func formatDuration(_ seconds: TimeInterval) -> String {
+        let s = Int(seconds.rounded(.up))
+        return s < 60 ? "\(s) s" : String(format: "%d min %02d s", s / 60, s % 60)
+    }
+}
+
 /// Converts a `FrameSequence` to a PNG sequence, MP4 or WebM.
 ///
-/// Frames are decoded in parallel batches and handed in order to a sink. Synchronous: call it off the
-/// main thread. `progress` gets (frames done, total); `isCancelled` is polled between frames.
+/// Frames are decoded in parallel batches; PNGs are also encoded in parallel, video frames are handed
+/// to the encoder in order. Synchronous: call it off the main thread. `progress` is called on the
+/// calling thread, at most once per percent or every 1/30 s, and always for the last frame;
+/// `isCancelled` is polled between frames.
 public final class SequenceExporter {
     public let sequence: FrameSequence
     public let options: ExportOptions
@@ -17,13 +42,14 @@ public final class SequenceExporter {
         self.sequence = sequence; self.options = options; self.output = output; self.ffmpeg = ffmpeg
     }
 
-    public func run(progress: (Int, Int) -> Void = { _, _ in }, isCancelled: () -> Bool = { false }) throws {
+    public func run(progress: (ExportProgress) -> Void = { _ in }, isCancelled: () -> Bool = { false }) throws {
         guard options.fps.isFinite, options.fps > 0, options.fps <= 1000 else { throw ExportError.invalidFPS(options.fps) }
         let frames = sequence.frames
         guard !frames.isEmpty else { throw ExportError.noFrames(sequence.directory) }
         if options.format.needsFFmpeg, ffmpeg == nil { throw ExportError.ffmpegMissing }
 
-        let first = try decode(frames[0])
+        let start = Date()
+        let first = try Self.decode(frames[0])
         let sink: FrameSink
         switch options.format {
         case .png: sink = try PNGSink(directory: output)
@@ -33,31 +59,46 @@ public final class SequenceExporter {
         }
 
         var done = 0
+        var lastReport = (percent: -1, time: Date.distantPast)
+        func report() {
+            let now = Date()
+            let p = ExportProgress(done: done, total: frames.count, elapsed: now.timeIntervalSince(start))
+            guard p.percent != lastReport.percent || now.timeIntervalSince(lastReport.time) >= 1 / 30 || done == frames.count
+            else { return }
+            lastReport = (p.percent, now)
+            progress(p)
+        }
+
         do {
             let batchSize = max(2, ProcessInfo.processInfo.activeProcessorCount)
-            var start = 0
-            while start < frames.count {
+            var offset = 0
+            while offset < frames.count {
                 if isCancelled() { throw ExportError.cancelled }
-                let batch = Array(frames[start ..< min(start + batchSize, frames.count)])
-                var decoded = [Result<VBNImage, Error>?](repeating: nil, count: batch.count)
-                decoded.withUnsafeMutableBufferPointer { slots in
+                let batch = Array(frames[offset ..< min(offset + batchSize, frames.count)])
+                // Each slot holds the decoded image for an in-order sink, or nil once a concurrent sink took it.
+                var results = [Result<VBNImage?, Error>?](repeating: nil, count: batch.count)
+                let base = offset
+                results.withUnsafeMutableBufferPointer { slots in
                     DispatchQueue.concurrentPerform(iterations: batch.count) { i in
-                        slots[i] = Result { start + i == 0 ? first : try self.decode(batch[i]) }
+                        slots[i] = Result {
+                            let image = base + i == 0 ? first : try Self.decode(batch[i])
+                            guard image.width == first.width, image.height == first.height else {
+                                throw ExportError.sizeMismatch(frame: batch[i].url.lastPathComponent,
+                                                               expected: "\(first.width)×\(first.height)",
+                                                               got: "\(image.width)×\(image.height)")
+                            }
+                            if sink.acceptsConcurrentFrames { try sink.append(image, frame: batch[i]); return nil }
+                            return image
+                        }
                     }
                 }
-                for (i, result) in decoded.enumerated() {
+                for (i, result) in results.enumerated() {
                     if isCancelled() { throw ExportError.cancelled }
-                    let image = try result!.get()
-                    guard image.width == first.width, image.height == first.height else {
-                        throw ExportError.sizeMismatch(frame: batch[i].url.lastPathComponent,
-                                                       expected: "\(first.width)×\(first.height)",
-                                                       got: "\(image.width)×\(image.height)")
-                    }
-                    try sink.append(image, index: start + i, name: batch[i].url.deletingPathExtension().lastPathComponent)
+                    if let image = try result!.get() { try sink.append(image, frame: batch[i]) }
                     done += 1
-                    progress(done, frames.count)
+                    report()
                 }
-                start += batch.count
+                offset += batch.count
             }
             try sink.finish()
         } catch {
@@ -66,61 +107,69 @@ public final class SequenceExporter {
         }
     }
 
-    private func decode(_ frame: FrameSequence.Frame) throws -> VBNImage {
+    private static func decode(_ frame: FrameSequence.Frame) throws -> VBNImage {
         do { return try VBNImage.decodeRGBA(data: Data(contentsOf: frame.url)) }
-        catch { throw ExportError.writerFailed("\(frame.url.lastPathComponent): \(error.localizedDescription)") }
+        catch { throw ExportError.decodeFailed(frame: frame.url.lastPathComponent, message: error.localizedDescription) }
     }
 }
 
 // MARK: - Sinks
 
-private protocol FrameSink {
-    func append(_ image: VBNImage, index: Int, name: String) throws
+private protocol FrameSink: AnyObject {
+    /// True when `append` may be called from several threads at once, in any order.
+    var acceptsConcurrentFrames: Bool { get }
+    func append(_ image: VBNImage, frame: FrameSequence.Frame) throws
     func finish() throws
     /// Stops and removes partial output.
     func abort()
 }
 
-/// One PNG per frame, named after the source frame.
+/// One PNG per frame, named after the source frame. Frames are encoded and written concurrently.
 private final class PNGSink: FrameSink {
+    let acceptsConcurrentFrames = true
     let directory: URL
     private var written: [URL] = []
+    private let lock = NSLock()
 
     init(directory: URL) throws {
         self.directory = directory
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
-    func append(_ image: VBNImage, index: Int, name: String) throws {
+    func append(_ image: VBNImage, frame: FrameSequence.Frame) throws {
+        let name = frame.url.deletingPathExtension().lastPathComponent
         let url = directory.appendingPathComponent(name).appendingPathExtension("png")
-        try VBNImage.pngData(from: image.cgImage()).write(to: url, options: .atomic)
-        written.append(url)
+        try VBNImage.pngData(from: image.cgImage()).write(to: url)
+        lock.lock(); written.append(url); lock.unlock()
     }
 
     func finish() throws {}
 
-    func abort() { for url in written { try? FileManager.default.removeItem(at: url) } }
+    func abort() {
+        lock.lock(); defer { lock.unlock() }
+        for url in written { try? FileManager.default.removeItem(at: url) }
+    }
 }
 
 /// H.264 MP4 via AVAssetWriter. No alpha: frames are flattened onto the background colour.
 private final class MP4Sink: FrameSink {
+    let acceptsConcurrentFrames = false
     private let writer: AVAssetWriter
     private let input: AVAssetWriterInput
     private let adaptor: AVAssetWriterInputPixelBufferAdaptor
     private let output: URL
-    private let options: ExportOptions
+    private let background: RGBColor
     private let width: Int, height: Int
+    /// 1000 ticks per frame: 50 fps -> timescale 50000, 29.97 -> 29970.
     private let timescale: CMTimeScale
-    private let frameTicks: CMTimeValue
+    private var frameIndex: CMTimeValue = 0
 
     init(output: URL, options: ExportOptions, width: Int, height: Int) throws {
-        self.output = output; self.options = options
+        self.output = output; background = options.background
         // H.264 4:2:0 needs even dimensions: pad right/bottom with the background.
         self.width = (width + 1) & ~1
         self.height = (height + 1) & ~1
-        // Exact rational time base: 50 -> 50/1, 29.97 -> 29970/1000.
         timescale = CMTimeScale((options.fps * 1000).rounded())
-        frameTicks = 1000
 
         try? FileManager.default.removeItem(at: output)
         writer = try AVAssetWriter(outputURL: output, fileType: .mp4)
@@ -153,7 +202,7 @@ private final class MP4Sink: FrameSink {
         writer.startSession(atSourceTime: .zero)
     }
 
-    func append(_ image: VBNImage, index: Int, name: String) throws {
+    func append(_ image: VBNImage, frame: FrameSequence.Frame) throws {
         while !input.isReadyForMoreMediaData {
             if writer.status == .failed { throw failure() }
             Thread.sleep(forTimeInterval: 0.002)
@@ -163,35 +212,38 @@ private final class MP4Sink: FrameSink {
         CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
         guard let buffer else { throw ExportError.writerFailed("no pixel buffer") }
         fill(buffer, from: image)
-        let time = CMTime(value: CMTimeValue(index) * frameTicks, timescale: timescale)
+        let time = CMTime(value: frameIndex * 1000, timescale: timescale)
         guard adaptor.append(buffer, withPresentationTime: time) else { throw failure() }
+        frameIndex += 1
     }
 
-    /// RGBA (straight alpha) -> opaque BGRA composited over the background, padding included.
+    /// RGBA (straight alpha) -> opaque BGRA composited over the background; the padding is plain background.
     private func fill(_ buffer: CVPixelBuffer, from image: VBNImage) {
         CVPixelBufferLockBaseAddress(buffer, [])
         defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
         let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
         let stride = CVPixelBufferGetBytesPerRow(buffer)
-        let bg = options.background
+        let bg = background
+        let bgB = UInt16(bg.b), bgG = UInt16(bg.g), bgR = UInt16(bg.r)
+        func paint(_ d: UnsafeMutablePointer<UInt8>) { d[0] = bg.b; d[1] = bg.g; d[2] = bg.r; d[3] = 255 }
         image.rgba.withUnsafeBufferPointer { src in
-            for y in 0 ..< height {
+            for y in 0 ..< image.height {
                 let row = base + y * stride
-                for x in 0 ..< width {
+                var s = y * image.width * 4
+                for x in 0 ..< image.width {
                     let d = row + x * 4
-                    guard x < image.width, y < image.height else {
-                        d[0] = bg.b; d[1] = bg.g; d[2] = bg.r; d[3] = 255
-                        continue
-                    }
-                    let s = (y * image.width + x) * 4
-                    let r = src[s], g = src[s + 1], b = src[s + 2], a = src[s + 3]
-                    let a16 = UInt16(a), ia = 255 - a16
-                    d[0] = UInt8((UInt16(b) * a16 + UInt16(bg.b) * ia + 127) / 255)
-                    d[1] = UInt8((UInt16(g) * a16 + UInt16(bg.g) * ia + 127) / 255)
-                    d[2] = UInt8((UInt16(r) * a16 + UInt16(bg.r) * ia + 127) / 255)
+                    let a = UInt16(src[s + 3]), ia = 255 - a
+                    d[0] = UInt8((UInt16(src[s + 2]) * a + bgB * ia + 127) / 255)
+                    d[1] = UInt8((UInt16(src[s + 1]) * a + bgG * ia + 127) / 255)
+                    d[2] = UInt8((UInt16(src[s]) * a + bgR * ia + 127) / 255)
                     d[3] = 255
+                    s += 4
                 }
+                for x in image.width ..< width { paint(row + x * 4) }
             }
+        }
+        for y in image.height ..< height {
+            for x in 0 ..< width { paint(base + y * stride + x * 4) }
         }
     }
 
@@ -215,6 +267,7 @@ private final class MP4Sink: FrameSink {
 
 /// WebM VP9 + alpha: raw RGBA frames piped into ffmpeg.
 private final class FFmpegSink: FrameSink {
+    let acceptsConcurrentFrames = false
     private let process = Process()
     private let stdin = Pipe()
     private let stderr = Pipe()
@@ -224,8 +277,8 @@ private final class FFmpegSink: FrameSink {
 
     init(ffmpeg: URL, output: URL, options: ExportOptions, width: Int, height: Int) throws {
         self.output = output
-        // A dead ffmpeg must surface as a write error, not kill us with SIGPIPE.
-        signal(SIGPIPE, SIG_IGN)
+        // A dead ffmpeg must surface as a write error (EPIPE) on this pipe, not kill the process with SIGPIPE.
+        _ = fcntl(stdin.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
         process.executableURL = ffmpeg
         process.arguments = FFmpeg.webmArguments(width: width, height: height, options: options, output: output)
         process.standardInput = stdin
@@ -239,7 +292,7 @@ private final class FFmpegSink: FrameSink {
         try process.run()
     }
 
-    func append(_ image: VBNImage, index: Int, name: String) throws {
+    func append(_ image: VBNImage, frame: FrameSequence.Frame) throws {
         do { try image.rgba.withUnsafeBytes { try stdin.fileHandleForWriting.write(contentsOf: $0) } }
         catch { throw failure(fallback: error.localizedDescription) }
     }
@@ -273,9 +326,8 @@ private final class FFmpegSink: FrameSink {
 public enum FFmpeg {
     /// The ffmpeg used for WebM: `$UNVBN_FFMPEG`, else the bundled `unVBN.app/Contents/Helpers/ffmpeg`
     /// (found from the app in Contents/MacOS/ or from the `unvbn` tool in Contents/Helpers/, symlinks
-    /// resolved), else a Homebrew install (handy for development builds without the bundled binary).
+    /// resolved). Debug builds also fall back to a Homebrew install; release builds never use a system ffmpeg.
     public static func locate() -> URL? {
-        let fm = FileManager.default
         var candidates: [URL] = []
         if let env = ProcessInfo.processInfo.environment["UNVBN_FFMPEG"], !env.isEmpty {
             candidates.append(URL(fileURLWithPath: env))
@@ -285,8 +337,10 @@ public enum FFmpeg {
             candidates.append(dir.appendingPathComponent("ffmpeg"))
             candidates.append(dir.deletingLastPathComponent().appendingPathComponent("Helpers/ffmpeg"))
         }
+        #if DEBUG
         candidates += ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"].map(URL.init(fileURLWithPath:))
-        return candidates.first { fm.isExecutableFile(atPath: $0.path) }
+        #endif
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 
     static func webmArguments(width: Int, height: Int, options: ExportOptions, output: URL) -> [String] {
@@ -298,8 +352,8 @@ public enum FFmpeg {
          output.path]
     }
 
-    /// 50 -> "50", 29.97 -> "29.97".
-    static func fpsString(_ fps: Double) -> String {
+    /// 50 -> "50", 29.97 -> "29.97", 23.976 -> "23.976".
+    public static func fpsString(_ fps: Double) -> String {
         fps == fps.rounded() ? String(Int(fps)) : String(fps)
     }
 }

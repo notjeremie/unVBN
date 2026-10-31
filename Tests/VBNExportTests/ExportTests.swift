@@ -38,7 +38,6 @@ final class ExportTests: XCTestCase {
     func testParseFrameNames() {
         XCTAssertEqual(FrameSequence.parse("NAME_00012.vbn")?.prefix, "NAME")
         XCTAssertEqual(FrameSequence.parse("NAME_00012.vbn")?.number, 12)
-        XCTAssertEqual(FrameSequence.parse("NAME_00012.vbn")?.digits, 5)
         XCTAssertEqual(FrameSequence.parse("Logo-3.VBN")?.prefix, "Logo")
         XCTAssertEqual(FrameSequence.parse("0042.vbn")?.prefix, "")
         XCTAssertNil(FrameSequence.parse("still.vbn"))
@@ -57,7 +56,6 @@ final class ExportTests: XCTestCase {
         let a = all[0]
         XCTAssertEqual(a.frames.map(\.number), [1, 2, 3, 5, 10])
         XCTAssertEqual(a.missingNumbers, [4, 6, 7, 8, 9])
-        XCTAssertEqual(a.digits, 5)
 
         // A single frame finds its whole sequence.
         let fromFrame = try FrameSequence.find(at: dir.appendingPathComponent("A_00003.vbn"))
@@ -78,7 +76,7 @@ final class ExportTests: XCTestCase {
         let seq = try makeSequence(count: 3)
         let out = dir.appendingPathComponent("png")
         var progress: [Int] = []
-        try SequenceExporter(sequence: seq, options: .init(format: .png), output: out).run(progress: { d, _ in progress.append(d) })
+        try SequenceExporter(sequence: seq, options: .init(format: .png), output: out).run(progress: { progress.append($0.done) })
         XCTAssertEqual(progress, [1, 2, 3])
         let names = try FileManager.default.contentsOfDirectory(atPath: out.path).sorted()
         XCTAssertEqual(names, ["LOGO_00000.png", "LOGO_00001.png", "LOGO_00002.png"])
@@ -91,7 +89,7 @@ final class ExportTests: XCTestCase {
 
     // MARK: MP4
 
-    /// Reads every frame of a movie as BGRA (straight) and returns (frame count, first frame pixel 0, size).
+    /// Reads every frame of a movie as BGRA and returns the frame count, the first frame's centre pixel, size and duration.
     private func readMovie(_ url: URL) async throws -> (count: Int, pixel: [UInt8], size: CGSize, duration: Double) {
         let asset = AVURLAsset(url: url)
         let tracks = try await asset.loadTracks(withMediaType: .video)
@@ -187,7 +185,7 @@ final class ExportTests: XCTestCase {
         let out = dir.appendingPathComponent("cancel.mp4")
         var done = 0
         XCTAssertThrowsError(try SequenceExporter(sequence: seq, options: .init(format: .mp4), output: out)
-            .run(progress: { d, _ in done = d }, isCancelled: { done >= 3 })) {
+            .run(progress: { done = $0.done }, isCancelled: { done >= 3 })) {
             XCTAssertEqual($0 as? ExportError, .cancelled)
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: out.path))
@@ -210,9 +208,33 @@ final class ExportTests: XCTestCase {
 
     func testOptionsHelpers() {
         XCTAssertEqual(RGBColor(hex: "#FF8000"), RGBColor(r: 255, g: 128, b: 0))
-        XCTAssertEqual(RGBColor(hex: "00ff00")?.hex, "#00FF00")
+        XCTAssertEqual(RGBColor(hex: "00ff00"), RGBColor(r: 0, g: 255, b: 0))
         XCTAssertNil(RGBColor(hex: "#12345"))
         XCTAssertEqual(FFmpeg.fpsString(50), "50")
         XCTAssertEqual(FFmpeg.fpsString(29.97), "29.97")
+        XCTAssertEqual(FFmpeg.fpsString(23.976), "23.976")
+    }
+
+    func testProgressMaths() {
+        let early = ExportProgress(done: 5, total: 750, elapsed: 0.1)
+        XCTAssertNil(early.framesPerSecond, "no rate during the first 0.3 s")
+        XCTAssertNil(early.remaining)
+        let mid = ExportProgress(done: 375, total: 750, elapsed: 3)
+        XCTAssertEqual(mid.percent, 50)
+        XCTAssertEqual(mid.fraction, 0.5)
+        XCTAssertEqual(mid.framesPerSecond, 125)
+        XCTAssertEqual(mid.remaining, 3)
+        XCTAssertEqual(ExportProgress.formatDuration(2.2), "3 s")
+        XCTAssertEqual(ExportProgress.formatDuration(65), "1 min 05 s")
+    }
+
+    func testCorruptFrameReportsDecodeError() throws {
+        let seq = try makeSequence(count: 3, width: 8, height: 8)
+        try Data("not a vbn".utf8).write(to: seq.frames[1].url)
+        XCTAssertThrowsError(try SequenceExporter(sequence: seq, options: .init(format: .png),
+                                                  output: dir.appendingPathComponent("p")).run()) { error in
+            guard case .decodeFailed(let frame, _) = error as? ExportError else { return XCTFail("\(error)") }
+            XCTAssertEqual(frame, "LOGO_00001.vbn")
+        }
     }
 }

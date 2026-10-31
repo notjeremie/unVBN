@@ -13,8 +13,6 @@ public struct FrameSequence: Equatable {
     /// Folder holding the frames.
     public let directory: URL
     public let frames: [Frame]
-    /// Width of the frame number in the source names (5 for `_00012`), reused for PNG output names.
-    public let digits: Int
 
     /// Frame numbers absent between the first and last frame.
     public var missingNumbers: [Int] {
@@ -47,30 +45,26 @@ public struct FrameSequence: Equatable {
         let files = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil,
                                                                 options: [.skipsHiddenFiles])
             .filter { $0.pathExtension.lowercased() == "vbn" }
-        var groups: [String: [(Frame, Int)]] = [:]
+        var groups: [String: [Frame]] = [:]
         for file in files {
-            if let p = parse(file.lastPathComponent) {
-                groups[p.prefix, default: []].append((Frame(url: file, number: p.number), p.digits))
-            } else {
-                let stem = file.deletingPathExtension().lastPathComponent
-                groups[stem, default: []].append((Frame(url: file, number: nil), 0))
-            }
+            let p = parse(file.lastPathComponent)
+            groups[p?.prefix ?? file.deletingPathExtension().lastPathComponent, default: []]
+                .append(Frame(url: file, number: p?.number))
         }
-        return groups.map { name, entries in
-            let frames = entries.map(\.0).sorted { ($0.number ?? 0, $0.url.lastPathComponent) < ($1.number ?? 0, $1.url.lastPathComponent) }
-            return FrameSequence(name: name.isEmpty ? dir.lastPathComponent : name, directory: dir,
-                                 frames: frames, digits: entries.map(\.1).max() ?? 0)
+        return groups.map { name, frames in
+            FrameSequence(name: name.isEmpty ? dir.lastPathComponent : name, directory: dir,
+                          frames: frames.sorted { ($0.number ?? 0, $0.url.lastPathComponent) < ($1.number ?? 0, $1.url.lastPathComponent) })
         }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
-    /// `NAME_00012.vbn` -> ("NAME", 12, 5). Separators `_`, `-`, `.` and space before the digits are dropped.
-    static func parse(_ fileName: String) -> (prefix: String, number: Int, digits: Int)? {
+    /// `NAME_00012.vbn` -> ("NAME", 12). Separators `_`, `-`, `.` and space before the digits are dropped.
+    static func parse(_ fileName: String) -> (prefix: String, number: Int)? {
         guard fileName.lowercased().hasSuffix(".vbn") else { return nil }
         let stem = fileName.dropLast(4)
         let digits = stem.reversed().prefix(while: \.isASCII).prefix(while: \.isNumber)
         guard !digits.isEmpty, digits.count <= 9, let number = Int(String(digits.reversed())) else { return nil }
         var prefix = stem.dropLast(digits.count)
         if let last = prefix.last, "_-. ".contains(last) { prefix = prefix.dropLast() }
-        return (String(prefix), number, digits.count)
+        return (String(prefix), number)
     }
 }

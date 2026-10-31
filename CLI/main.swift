@@ -17,52 +17,47 @@ or WebM (VP9 + alpha). A folder holding several sequences converts each one.
   --crf             WebM quality, 0 (best) to 63 (default 30)
 """
 
+/// Writes to stderr.
+func eprint(_ s: String, terminator: String = "\n") { FileHandle.standardError.write(Data((s + terminator).utf8)) }
+
+func fail(_ message: String, code: Int32 = 1) -> Never {
+    eprint("unvbn: \(message)")
+    exit(code)
+}
+
 /// Rendering progress on stderr: a redrawn bar on a terminal, a line every 10 % when piped.
-///   [██████████████░░░░░░░░░░]  58%  435/750  92 fps  ETA 3s
+///   [██████████████░░░░░░░░░░]  58%  435/750  92 fps  ETA 3 s
 final class ProgressBar {
-    let total: Int
-    private let start = Date()
     private let tty = isatty(STDERR_FILENO) == 1
     private var lastDrawn = -1
 
-    init(total: Int) { self.total = max(total, 1) }
-
-    func update(_ done: Int) {
-        let percent = done * 100 / total
-        if tty {
-            // Redraw at most once per percent (and on the last frame).
-            guard percent != lastDrawn || done == total else { return }
-        } else {
-            guard percent / 10 != lastDrawn / 10 || done == total else { return }
-        }
-        lastDrawn = percent
-        let width = 24
-        let filled = done * width / total
-        let elapsed = Date().timeIntervalSince(start)
+    func update(_ p: ExportProgress) {
+        // The exporter already reports at most once per percent; when piped, keep one line per 10 %.
+        guard tty || p.percent / 10 != lastDrawn / 10 || p.done == p.total else { return }
+        lastDrawn = p.percent
+        let width = 24, filled = p.done * width / max(p.total, 1)
         var line = "[" + String(repeating: "\u{2588}", count: filled) + String(repeating: "\u{2591}", count: width - filled) + "]"
-        line += String(format: " %3d%%  %d/%d", percent, done, total)
-        if done > 0, elapsed > 0.3 {
-            let rate = Double(done) / elapsed
-            line += String(format: "  %.0f fps  ETA %@", rate, Self.duration(Double(total - done) / rate))
+        line += String(format: " %3d%%  %d/%d", p.percent, p.done, p.total)
+        if let fps = p.framesPerSecond, let left = p.remaining {
+            line += String(format: "  %.0f fps  ETA ", fps) + ExportProgress.formatDuration(left)
         }
-        write(tty ? "\r  " + line + "\u{1B}[K" : "  " + line + "\n")
+        eprint(tty ? "\r  " + line + "\u{1B}[K" : "  " + line, terminator: tty ? "" : "\n")
     }
 
-    func finish(seconds: Double) {
-        write((tty ? "\r\u{1B}[K" : "") + String(format: "  done: %d frames in %.1f s\n", total, seconds))
+    func finish(frames: Int, seconds: Double) {
+        eprint((tty ? "\r\u{1B}[K" : "") + String(format: "  done: %d frames in %.1f s", frames, seconds))
     }
 
-    static func duration(_ s: Double) -> String {
-        let n = Int(s.rounded(.up))
-        return n < 60 ? "\(n)s" : "\(n / 60)m\(String(format: "%02d", n % 60))s"
-    }
-
-    private func write(_ s: String) { FileHandle.standardError.write(Data(s.utf8)) }
+    /// Ends a half-drawn bar line before an error message.
+    func interrupt() { if tty, lastDrawn >= 0 { eprint("") } }
 }
 
-func fail(_ message: String, code: Int32 = 1) -> Never {
-    FileHandle.standardError.write(Data("unvbn: \(message)\n".utf8))
-    exit(code)
+/// Reads only the 192-byte header of a frame.
+func header(of url: URL) -> VBNHeader? {
+    guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+    defer { try? handle.close() }
+    guard let bytes = try? handle.read(upToCount: VBNHeader.size) else { return nil }
+    return try? VBNHeader(bytes: [UInt8](bytes))
 }
 
 var args = Array(CommandLine.arguments.dropFirst())
@@ -115,7 +110,7 @@ for input in inputs {
 if infoOnly {
     for seq in sequences {
         var line = "\(seq.name): \(seq.frames.count) frame\(seq.frames.count == 1 ? "" : "s") in \(seq.directory.path)"
-        if let data = try? Data(contentsOf: seq.frames[0].url), let h = try? VBNHeader(bytes: [UInt8](data.prefix(VBNHeader.size))) {
+        if let h = header(of: seq.frames[0].url) {
             line += ", \(h.width)×\(h.height) \(h.pixelFormat == .dxt5 ? "DXT5" : "BGRA")\(h.compressed ? " QuickLZ" : "")"
         }
         let missing = seq.missingNumbers
@@ -132,17 +127,17 @@ for seq in sequences {
     let out = outputPath.map { URL(fileURLWithPath: $0) } ?? options.format.defaultOutput(for: seq)
     let missing = seq.missingNumbers
     if !missing.isEmpty {
-        FileHandle.standardError.write(Data("unvbn: warning: \(seq.name) has \(missing.count) missing frame number(s); they are skipped\n".utf8))
+        eprint("unvbn: warning: \(seq.name) has \(missing.count) missing frame number(s); they are skipped")
     }
-    FileHandle.standardError.write(Data("\(seq.name): \(seq.frames.count) frames -> \(out.path)\n".utf8))
+    eprint("\(seq.name): \(seq.frames.count) frames -> \(out.path)")
     let start = Date()
-    let bar = ProgressBar(total: seq.frames.count)
+    let bar = ProgressBar()
     do {
-        try SequenceExporter(sequence: seq, options: options, output: out).run(progress: { done, _ in bar.update(done) })
-        bar.finish(seconds: Date().timeIntervalSince(start))
+        try SequenceExporter(sequence: seq, options: options, output: out).run(progress: bar.update)
+        bar.finish(frames: seq.frames.count, seconds: Date().timeIntervalSince(start))
     } catch {
-        FileHandle.standardError.write(Data("\n".utf8))
-        FileHandle.standardError.write(Data("unvbn: \(seq.name): \(error.localizedDescription)\n".utf8))
+        bar.interrupt()
+        eprint("unvbn: \(seq.name): \(error.localizedDescription)")
         failures += 1
     }
 }
