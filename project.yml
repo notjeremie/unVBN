@@ -11,7 +11,7 @@ settings:
     SWIFT_VERSION: "5.0"
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     # Local ad-hoc signing ("Sign to Run Locally"): no Apple account needed.
-    # For Developer ID distribution see README.md.
+    # For Developer ID distribution see docs/DEVELOPMENT.md.
     CODE_SIGN_IDENTITY: "-"
     CODE_SIGN_STYLE: Manual
     DEVELOPMENT_TEAM: ""
