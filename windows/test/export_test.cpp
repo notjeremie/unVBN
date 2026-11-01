@@ -263,7 +263,8 @@ void testYuv709() {
 /// `export_test fixture DIR`: writes two small sequences (LOGO, 12 frames; Intro, 5 frames) into DIR, for
 /// the CLI smoke test in CI.
 int writeFixture(const char* dir) {
-    const fs::path root = vbnx::fromUtf8(dir);
+    // Narrow argv is in the system code page on Windows, which is what fs::path(const char*) expects.
+    const fs::path root(dir);
     fs::create_directories(root);
     for (int i = 0; i < 12; ++i) {
         char name[32];
