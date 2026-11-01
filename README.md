@@ -184,7 +184,7 @@ after (files, PATH, folder verb). The MSIs are the run's artifacts. By hand, on 
 `arm64-windows-static` and `-A ARM64` on ARM):
 
 ```bat
-cmake -S windows -B build -A x64 -DUNVBN_VERSION=0.3.2 ^
+cmake -S windows -B build -A x64 -DUNVBN_VERSION=0.3.3 ^
   -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-static
 cmake --build build --config Release
 regsvr32 build\Release\unvbn_wic.dll        &:: as administrator; regsvr32 /u to remove

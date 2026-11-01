@@ -1,6 +1,6 @@
 # unVBN for Windows: a WIC codec (unvbn_wic.dll) so Windows can open Vizrt .vbn images, the export tools
 # (unvbn.exe, the CLI, and unvbn-export.exe, the export window), plus tests.
-#   cmake -S windows -B build -A x64 -DUNVBN_VERSION=0.3.2 ^
+#   cmake -S windows -B build -A x64 -DUNVBN_VERSION=0.3.3 ^
 #     -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-static
 #   cmake --build build --config Release
 # vcpkg (manifest vcpkg.json) supplies libvpx and libwebm, linked statically. Use arm64-windows-static for ARM64.
