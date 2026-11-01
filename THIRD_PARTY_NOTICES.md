@@ -1,8 +1,13 @@
 # Third-party notices
 
-unVBN bundles the following third-party software. Both are built by
-`scripts/build-ffmpeg.sh` from the unmodified upstream source tarballs
-(SHA-256 pinned in the script).
+unVBN bundles the following third-party software.
+
+- **macOS**: ffmpeg and libvpx, built by `scripts/build-ffmpeg.sh` from the unmodified upstream source
+  tarballs (SHA-256 pinned in the script). Sections below.
+- **Windows**: libvpx (BSD-3-Clause, VP9 encoder) and libwebm (BSD-3-Clause, WebM muxer), unmodified
+  releases built by vcpkg (`windows/vcpkg.json`) and linked statically into `unvbn.exe` and
+  `unvbn-export.exe`. No ffmpeg. Their licence texts are installed as
+  `C:\Program Files\unVBN\THIRD_PARTY_NOTICES.txt`, generated at build time from vcpkg's copyright files.
 
 ## ffmpeg 7.1.5
 

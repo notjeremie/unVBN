@@ -1,5 +1,6 @@
-# Builds the Windows WIC codec (x64 and ARM64), tests it through WIC itself (regsvr32, then the MSI
-# install/uninstall cycle) and uploads the MSIs as artifacts.
+# Builds unVBN for Windows (x64 and ARM64): the WIC codec, tested through WIC itself (regsvr32, then the MSI
+# install/uninstall cycle), and the export tools (unvbn.exe, unvbn-export.exe) with their encoder tests.
+# Uploads the MSIs as artifacts.
 name: Windows codec
 
 on:
@@ -46,15 +47,60 @@ jobs:
           "VERSION=$v" >> $env:GITHUB_ENV
           Write-Host "version $v"
 
+      - name: vcpkg
+        run: |
+          $root = $env:VCPKG_INSTALLATION_ROOT
+          if (-not $root -or -not (Test-Path "$root\vcpkg.exe")) {
+            $root = "$env:RUNNER_TEMP\vcpkg"
+            git clone --depth 1 https://github.com/microsoft/vcpkg $root
+            & "$root\bootstrap-vcpkg.bat" -disableMetrics
+          }
+          "VCPKG_ROOT=$root" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force "${{ github.workspace }}\vcpkg-cache" | Out-Null
+          "VCPKG_DEFAULT_BINARY_CACHE=${{ github.workspace }}\vcpkg-cache" >> $env:GITHUB_ENV
+
+      - uses: actions/cache@v4
+        with:
+          path: vcpkg-cache
+          key: vcpkg-${{ matrix.runner }}-${{ matrix.arch }}-${{ hashFiles('windows/vcpkg.json') }}
+
       - name: Build
         run: |
-          cmake -S windows -B build -A ${{ matrix.cmake_arch }} -DUNVBN_VERSION="$env:VERSION"
+          cmake -S windows -B build -A ${{ matrix.cmake_arch }} -DUNVBN_VERSION="$env:VERSION" `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.arch }}-windows-static
+          if ($LASTEXITCODE) { throw "configure failed" }
           cmake --build build --config Release
+          if ($LASTEXITCODE) { throw "build failed" }
 
       - name: Decoder tests
         run: |
           build\Release\test_decode.exe
           if ($LASTEXITCODE) { throw "decoder tests failed" }
+
+      - name: Export tests (PNG, MP4, WebM read back and checked)
+        run: |
+          build\Release\export_test.exe
+          if ($LASTEXITCODE) { throw "export tests failed" }
+
+      - name: CLI smoke test
+        run: |
+          $dir = "$env:RUNNER_TEMP\cli fixture é"
+          build\Release\export_test.exe fixture $dir
+          build\Release\unvbn.exe --help | Out-Null
+          if ($LASTEXITCODE) { throw "--help failed" }
+          build\Release\unvbn.exe info $dir
+          if ($LASTEXITCODE) { throw "info failed" }
+          foreach ($f in 'png', 'mp4', 'webm') {
+            build\Release\unvbn.exe $dir -f $f
+            if ($LASTEXITCODE) { throw "unvbn -f $f failed" }
+          }
+          $parent = Split-Path $dir
+          foreach ($o in 'LOGO.mp4', 'LOGO.webm', 'Intro.mp4', 'Intro.webm', 'LOGO_png\LOGO_00011.png', 'Intro_png\Intro_00004.png') {
+            if (-not (Test-Path -LiteralPath "$parent\$o")) { throw "missing output $o" }
+          }
+          build\Release\unvbn.exe "$env:RUNNER_TEMP\does-not-exist" 2>$null
+          if ($LASTEXITCODE -ne 1) { throw "a missing input must exit 1" }
 
       - name: WIC tests (regsvr32)
         run: |
@@ -129,7 +175,7 @@ jobs:
           wix extension add --global WixToolset.UI.wixext/4.0.5
           New-Item -ItemType Directory -Force dist | Out-Null
           wix build windows/installer/unVBN.wxs -arch ${{ matrix.arch }} -ext WixToolset.UI.wixext `
-            -d Version=$env:VERSION -d DllPath=build\Release\unvbn_wic.dll -d RepoRoot="$PWD" `
+            -d Version=$env:VERSION -d BinDir=build\Release -d RepoRoot="$PWD" `
             -o "dist\unVBN-windows-$env:VERSION-${{ matrix.arch }}.msi"
           if ($LASTEXITCODE) { throw "wix build failed" }
 
@@ -144,11 +190,27 @@ jobs:
           if ($registered -notlike "*\Program Files\unVBN\unvbn_wic.dll") { throw "codec not registered from Program Files" }
           build\Release\wic_test.exe
           if ($LASTEXITCODE) { throw "WIC tests failed after MSI install" }
+          $installed = "$env:ProgramFiles\unVBN"
+          foreach ($f in 'unvbn.exe', 'unvbn-export.exe', 'THIRD_PARTY_NOTICES.txt') {
+            if (-not (Test-Path "$installed\$f")) { throw "$f not installed" }
+          }
+          $envKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment'
+          $path = (Get-ItemProperty $envKey).Path
+          if (($path -split ';') -notcontains "$installed\") { throw "install folder not on PATH: $path" }
+          $verb = 'Registry::HKEY_CLASSES_ROOT\Directory\shell\unVBN.Export\command'
+          $command = (Get-ItemProperty -LiteralPath $verb).'(default)'
+          Write-Host "folder verb: $command"
+          if ($command -ne "`"$installed\unvbn-export.exe`" `"%1`"") { throw "folder verb wrong: $command" }
+          & "$installed\unvbn.exe" --help | Out-Null
+          if ($LASTEXITCODE) { throw "installed unvbn.exe failed" }
           $p = Start-Process msiexec -ArgumentList '/x', "`"$msi`"", '/qn', '/l*v', 'uninstall.log' -Wait -PassThru
           if ($p.ExitCode) { Get-Content uninstall.log -Tail 60; throw "uninstall failed: $($p.ExitCode)" }
           build\Release\wic_test.exe --expect-missing
           if ($LASTEXITCODE) { throw "codec still registered after uninstall" }
-          if (Test-Path 'C:\Program Files\unVBN\unvbn_wic.dll') { throw "DLL left behind" }
+          if (Test-Path 'C:\Program Files\unVBN') { throw "install folder left behind" }
+          if (Test-Path -LiteralPath 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Classes\Directory\shell\unVBN.Export') { throw "folder verb left behind" }
+          $path = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment').Path
+          if ($path -like '*\unVBN*') { throw "PATH entry left behind: $path" }
           foreach ($k in 'HKLM:\SOFTWARE\Classes\.vbn', 'HKLM:\SOFTWARE\Classes\SystemFileAssociations\.vbn') {
             if (Test-Path -LiteralPath $k) { throw "$k left behind after uninstall" }
           }

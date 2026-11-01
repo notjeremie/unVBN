@@ -1,0 +1,31 @@
+// unvbn.exe: icon and version.
+#include <winver.h>
+#include "version.h"
+
+1 ICON "../app/unvbn.ico"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION UNVBN_VERSION_COMMA
+PRODUCTVERSION UNVBN_VERSION_COMMA
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "unVBN"
+            VALUE "FileDescription", "unvbn: converts Vizrt .vbn sequences to PNG, MP4, WebM"
+            VALUE "FileVersion", UNVBN_VERSION_STR
+            VALUE "InternalName", "unvbn"
+            VALUE "LegalCopyright", "Copyright (c) 2026 Jeremie Quenet. MIT License."
+            VALUE "OriginalFilename", "unvbn.exe"
+            VALUE "ProductName", "unVBN"
+            VALUE "ProductVersion", UNVBN_VERSION_STR
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

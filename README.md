@@ -3,8 +3,7 @@
 # unVBN: Vizrt `.vbn` images on macOS and Windows
 
 Vizrt Viz Artist / Viz Engine store their images and animations as `.vbn` files, which no regular image
-app can open. unVBN makes them viewable on a Mac and on Windows, and on the Mac also converts animations
-to video.
+app can open. unVBN makes them viewable on a Mac and on Windows, and converts animations to video on both.
 
 | | macOS | Windows |
 |---|---|---|
@@ -12,7 +11,7 @@ to video.
 | Preview | Quick Look (space bar) | Windows Photo Viewer |
 | Double-click | Opens as a PNG in Preview | Opens in Windows Photo Viewer |
 | Other apps | – | Any app that reads images through Windows' WIC |
-| Animations → PNG sequence, MP4, WebM | ✅ app + `unvbn` command line | – |
+| Animations → PNG sequence, MP4, WebM | ✅ app + `unvbn` command line | ✅ export window (right-click a folder) + `unvbn` command line |
 
 Download: **[latest release](https://github.com/notjeremie/unVBN/releases/latest)**. The format is documented in
 [`FORMAT.md`](FORMAT.md).
@@ -82,11 +81,32 @@ unvbn LOGO_FOLDER/ -f webm --crf 20           # WebM quality: 0 (best) … 63, d
 Frames are ordered by the number at the end of their names. Gaps in the numbering are reported and
 skipped; every frame must have the same size.
 
-### Windows
+### Windows: viewing
 
 Once installed, Windows reads `.vbn` like one of its own image formats: thumbnails in Explorer,
 double-click opens Windows Photo Viewer, and apps that load images through WIC (the Windows Imaging
-Component) can open them. Windows does not convert or export anything.
+Component) can open them.
+
+### Windows: converting animations
+
+Same formats and options as on the Mac (table above).
+
+**In Explorer**: right-click an animation's folder > *Export with unVBN…* (on Windows 11 it is under
+*Show more options*). Select several folders first to export them together. The export window lists every
+animation it found, all ticked; untick the ones to skip, pick the format and frame rate, then *Export…* (one
+animation) or *Export All…* (several, into one folder you pick, `NAME (FOLDER)` when two share a name).
+More folders can be dropped on the window. Progress also shows on the taskbar button.
+
+**On the command line**: the installer puts `unvbn` on the PATH (open a new terminal after installing).
+Same commands as on the Mac:
+
+```bat
+unvbn info LOGO_FOLDER
+unvbn LOGO_FOLDER -f webm
+unvbn LOGO_A LOGO_B LOGO_C -f mp4 --fps 25 --background #FFFFFF
+```
+
+Ctrl+C stops an export and deletes the unfinished file.
 
 ## Good to know
 
@@ -98,6 +118,10 @@ Component) can open them. Windows does not convert or export anything.
   showed blue). Compressed (DXT5) files were fine. Re-export anything made from uncompressed files with an
   older version.
 - **WebM on Intel Macs** is slower than on Apple silicon (the bundled encoder uses plain C there).
+- **MP4 on Windows** uses Windows' own H.264 encoder, which refuses frames with a side of 32 pixels or less
+  and very large ones (8K): tiny animations are padded to 34 pixels with the background colour, and
+  oversized ones fail with a message. WebM and PNG have no such limit. On Windows N editions, MP4 needs the
+  Media Feature Pack.
 - **Transparency**: every real `.vbn` checked so far was opaque; transparency handling is verified on test
   images.
 
@@ -138,28 +162,41 @@ qlmanage -t -x -s 256 -o /tmp/thumbs file.vbn   # thumbnail through quicklookd (
 qlmanage -p file.vbn                            # preview window
 ```
 
-### Windows codec
+### Windows
 
-`windows/` is a C++17 WIC codec built with CMake and Visual Studio 2022.
+`windows/` is C++17, built with CMake and Visual Studio 2022: the WIC codec and the export tools.
+[vcpkg](https://vcpkg.io) supplies libvpx and libwebm (manifest `windows/vcpkg.json`, linked statically).
 
 | Part | What |
 |---|---|
 | `windows/src/vbn_decode.*` | Portable port of `VBNCore`, pixel-identical to it. QuickLZ output is capped at the size the header requires, so a hostile file can't make Explorer allocate gigabytes. |
 | `windows/src/wic_codec.cpp` | The COM DLL: WIC decoder (32bpp BGRA, straight alpha, magic-number pattern `1E F1 0D 90`), Explorer thumbnail handler (`IThumbnailProvider`), and `DllRegisterServer` / `DllUnregisterServer`, the single source of truth for the registry entries. |
-| `windows/installer/unVBN.wxs` | WiX v4 per-machine MSI with a short wizard; installs the DLL and calls its self-registration. |
-| `windows/test/` | `test_decode` (portable, also runs on macOS) and `wic_test` (decodes through WIC itself, short-read streams, Explorer thumbnails). |
+| `windows/src/export/` | Port of `VBNExport`: sequence scanning and naming (portable), parallel exporter and batch runner (portable), BT.709 conversion (portable), and the Windows encoders in `sinks_win.cpp`: PNG through WIC, MP4 through Media Foundation, WebM VP9 + alpha through libvpx and libwebm (colour and alpha as two VP9 streams, alpha in `BlockAdditional`, `AlphaMode` 1, as browsers expect). |
+| `windows/src/cli/` | `unvbn.exe`, same usage as the macOS tool. |
+| `windows/src/app/` | `unvbn-export.exe`, the Win32 export window. A second launch (Explorer starts one per selected folder) hands its folders to the open window. |
+| `windows/installer/unVBN.wxs` | WiX v4 per-machine MSI with a short wizard: the codec (self-registration), both programs, the PATH entry, the folder verb and `THIRD_PARTY_NOTICES.txt` (generated by CMake from vcpkg's licence files). |
+| `windows/test/` | `test_decode` and `export_test` (portable parts also run on macOS), `wic_test` (decodes through WIC itself, short-read streams, Explorer thumbnails). `export_test` reads every encoder's output back independently (WIC, Media Foundation, an EBML walker plus libvpx's decoder) and compares it with the source pixels and alpha. |
 
-CI (`.github/workflows/windows.yml`) builds x64 and ARM64, runs both test programs, registers the codec
-with `regsvr32`, then installs and uninstalls the MSI and checks everything before and after. The MSIs are
-the run's artifacts. By hand, on Windows:
+CI (`.github/workflows/windows.yml`) builds x64 and ARM64, runs the test programs and a CLI smoke test,
+registers the codec with `regsvr32`, then installs and uninstalls the MSI and checks everything before and
+after (files, PATH, folder verb). The MSIs are the run's artifacts. By hand, on Windows (`VCPKG_ROOT` set;
+`arm64-windows-static` and `-A ARM64` on ARM):
 
 ```bat
-cmake -S windows -B build -A x64 -DUNVBN_VERSION=0.3.1
+cmake -S windows -B build -A x64 -DUNVBN_VERSION=0.3.1 ^
+  -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-static
 cmake --build build --config Release
 regsvr32 build\Release\unvbn_wic.dll        &:: as administrator; regsvr32 /u to remove
 ```
 
-On a Mac: `clang++ -std=c++17 windows/src/vbn_decode.cpp windows/test/test_decode.cpp -o test_decode && ./test_decode`.
+On a Mac (portable tests only):
+
+```sh
+cd windows
+clang++ -std=c++17 -Isrc src/vbn_decode.cpp test/test_decode.cpp -o /tmp/test_decode && /tmp/test_decode
+clang++ -std=c++17 -Isrc src/vbn_decode.cpp src/export/{sequence,exporter,yuv,sinks_none}.cpp test/export_test.cpp \
+  -o /tmp/export_test && /tmp/export_test
+```
 
 ### Releasing
 

@@ -1,0 +1,6 @@
+{
+  "name": "unvbn-windows",
+  "version-string": "0",
+  "description": "Encoders linked into unVBN's export tools: VP9 (libvpx) and WebM muxing (libwebm), both BSD-licensed.",
+  "dependencies": ["libvpx", "libwebm"]
+}
