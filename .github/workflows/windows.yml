@@ -101,6 +101,7 @@ jobs:
           }
           build\Release\unvbn.exe "$env:RUNNER_TEMP\does-not-exist" 2>$null
           if ($LASTEXITCODE -ne 1) { throw "a missing input must exit 1" }
+          $global:LASTEXITCODE = 0   # the expected failure above must not fail the step
 
       - name: WIC tests (regsvr32)
         run: |
