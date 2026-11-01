@@ -133,7 +133,8 @@ std::pair<UINT32, UINT32> fpsRatio(double fps) {
 /// H.264 in MP4 through the Media Foundation sink writer and Windows' own encoder. No alpha: frames are
 /// flattened onto the background colour, and padded right/bottom with it where the encoder needs a bigger
 /// frame: 4:2:0 needs even sizes, and Windows' encoder refuses any side of 32 pixels or less.
-/// Its upper limits: 8192 pixels per side, and the frame area of H.264 level 6.2 (8192x4320 passes).
+/// Its upper limits: 8192 pixels per side, and the frame area of H.264 level 6.2 (8192x4320 passes) on
+/// Windows 11, level 5.2 (4096x2304) on Windows 10.
 class Mp4Sink : public FrameSink {
 public:
     static constexpr uint32_t kMaxSide = 8192;
@@ -189,8 +190,16 @@ public:
         check(MFCreateMediaType(&in), "media type");
         common(in.Get(), MFVideoFormat_NV12, true);
         check(in->SetUINT32(MF_MT_DEFAULT_STRIDE, w_), "media type");
-        check(writer_->SetInputMediaType(stream_, in.Get(), nullptr),
-              ("The H.264 encoder does not accept " + std::to_string(w_) + "x" + std::to_string(h_) + " frames").c_str());
+        if (const HRESULT hr = writer_->SetInputMediaType(stream_, in.Get(), nullptr); FAILED(hr)) {
+            writer_.Reset();
+            removeQuietly(output_);
+            // Windows 10's encoder ignores the level 6.2 request and stays at 4096x2304 in area.
+            if (hr == MF_E_INVALIDMEDIATYPE)
+                throw Error(Error::Kind::encoderFailed,
+                            "Windows' H.264 encoder on this computer refuses " + std::to_string(width) + "x" + std::to_string(height) +
+                                " frames (Windows 10 stops at 4096x2304 in area, Windows 11 at 8192x4320). Export it as WebM or PNG instead.");
+            check(hr, "H.264 encoder");
+        }
         check(writer_->BeginWriting(), "H.264 encoder");
     }
 

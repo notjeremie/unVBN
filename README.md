@@ -119,10 +119,10 @@ Ctrl+C stops an export and deletes the unfinished file.
   older version.
 - **WebM on Intel Macs** is slower than on Apple silicon (the bundled encoder uses plain C there).
 - **MP4 on Windows** uses Windows' own H.264 encoder, which refuses frames with a side of 32 pixels or less,
-  a side over 8192 pixels, or an area over 8192×4320: tiny animations are padded to 34 pixels with the
-  background colour, and oversized ones (a 16384-pixel video wall, say) fail at once with a message.
-  WebM and PNG have no such limit. On Windows N editions, MP4 needs the
-  Media Feature Pack.
+  a side over 8192 pixels, or an area over 8192×4320 on Windows 11 (4096×2304 on Windows 10): tiny
+  animations are padded to 34 pixels with the background colour, and oversized ones (a 16384-pixel video
+  wall, say) fail at once with a message. WebM and PNG have no such limit. On Windows N editions, MP4
+  needs the Media Feature Pack.
 - **Transparency**: every real `.vbn` checked so far was opaque; transparency handling is verified on test
   images.
 

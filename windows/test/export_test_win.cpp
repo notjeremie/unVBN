@@ -164,9 +164,16 @@ void testMP4(const fs::path& root) {
 
     // Above level 5.2's area the encoder needs level 6.2; past 8192 pixels a side it cannot encode at all.
     const auto wide = makeSequence(root, "WIDE", 2, 7680, 4320);
-    vbnx::exportSequence(wide, optionsFor(Format::mp4), root / "wide.mp4");
-    const VideoInfo w8k = readMP4(root / "wide.mp4");
-    CHECK(w8k.frames == 2 && w8k.width == 7680 && w8k.height == 4320, "mp4 8K (level 6.2)");
+    try {
+        vbnx::exportSequence(wide, optionsFor(Format::mp4), root / "wide.mp4");
+        const VideoInfo w8k = readMP4(root / "wide.mp4");
+        CHECK(w8k.frames == 2 && w8k.width == 7680 && w8k.height == 4320, "mp4 8K (level 6.2)");
+    } catch (const Error& e) {  // Windows 10's encoder stops at level 5.2: a clear message, nothing left behind
+        std::printf("  (8K MP4 refused by this Windows version, as on Windows 10)\n");
+        CHECK(e.kind == Error::Kind::encoderFailed && std::string(e.what()).find("WebM or PNG") != std::string::npos,
+              "mp4 8K refusal explains itself");
+        CHECK(!fs::exists(root / "wide.mp4"), "no mp4 left when 8K is refused");
+    }
     const auto huge = makeSequence(root, "HUGE", 1, 8194, 64);
     expectError(Error::Kind::encoderFailed, [&] { vbnx::exportSequence(huge, optionsFor(Format::mp4), root / "huge.mp4"); },
                 "mp4 wider than 8192");
