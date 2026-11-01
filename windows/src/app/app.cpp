@@ -12,9 +12,7 @@
 
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <cstdio>
-#include <fstream>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -22,7 +20,6 @@
 
 #include "export/exporter.h"
 #include "resource.h"
-#include "vbn_decode.h"
 
 using Microsoft::WRL::ComPtr;
 using namespace vbnx;
@@ -36,6 +33,8 @@ constexpr wchar_t kClass[] = L"unVBN.ExportWindow";
 constexpr ULONG_PTR kCopyDataPaths = 0x564E4250;  // 'VNBP': NUL-separated UTF-16 paths
 const double kFrameRates[] = {23.976, 24, 25, 29.97, 30, 50, 59.94, 60};
 const Format kFormats[] = {Format::png, Format::mp4, Format::webm};
+constexpr int kDefaultFps = 5;     // 50 fps
+constexpr int kDefaultFormat = 2;  // WebM, as on the Mac
 
 std::wstring wide(const std::string& s) { return fromUtf8(s).wstring(); }
 std::string narrow(const std::wstring& s) { return utf8(fs::path(s)); }
@@ -51,15 +50,6 @@ struct Scan {
     std::vector<std::string> problems;
     bool append = false;
 };
-
-std::string sizeOf(const fs::path& frame) {
-    std::ifstream in(frame, std::ios::binary);
-    uint8_t bytes[vbn::kHeaderSize];
-    vbn::Header h;
-    std::string error;
-    if (!in.read(reinterpret_cast<char*>(bytes), sizeof bytes) || !vbn::parseHeader(bytes, sizeof bytes, h, error)) return "?";
-    return std::to_string(h.width) + "\xC3\x97" + std::to_string(h.height) + (h.dxt5 ? " DXT5" : " RGBA");
-}
 
 struct App {
     HINSTANCE instance = nullptr;
@@ -77,7 +67,7 @@ struct App {
     std::thread worker;
     std::atomic<bool> cancel{false};
     bool running = false;
-    size_t jobCount = 0;
+    std::vector<std::string> jobNames;  // of the running or last export, in job order
     std::optional<size_t> batchIndex;
     std::mutex lock;  // guards `pending`
     struct {
@@ -99,12 +89,12 @@ void show(int id, bool visible) { ShowWindow(item(id), visible ? SW_SHOW : SW_HI
 
 Format selectedFormat() {
     const LRESULT i = SendMessageW(item(IDC_FORMAT), CB_GETCURSEL, 0, 0);
-    return kFormats[i >= 0 && i < 3 ? i : 2];
+    return kFormats[i >= 0 && i < LRESULT(std::size(kFormats)) ? i : kDefaultFormat];
 }
 
 double selectedFps() {
     const LRESULT i = SendMessageW(item(IDC_FPS), CB_GETCURSEL, 0, 0);
-    return kFrameRates[i >= 0 && i < LRESULT(std::size(kFrameRates)) ? i : 5];
+    return kFrameRates[i >= 0 && i < LRESULT(std::size(kFrameRates)) ? i : kDefaultFps];
 }
 
 std::vector<size_t> checkedRows() {
@@ -207,7 +197,8 @@ void startScan(std::vector<fs::path> paths, bool append) {
             try {
                 for (auto& seq : findSequences(p)) {
                     Row row{std::move(seq), {}, 0};
-                    row.size = sizeOf(row.sequence.frames[0].path);
+                    const auto header = readHeader(row.sequence.frames[0].path);
+                    row.size = header ? describe(*header) : "?";
                     row.missing = row.sequence.missingNumbers().size();
                     scan->rows.push_back(std::move(row));
                 }
@@ -262,13 +253,18 @@ bool showDialog(IFileDialog* dialog) {
     return false;
 }
 
-std::optional<fs::path> resultPath(IFileDialog* dialog) {
-    ComPtr<IShellItem> result;
+std::optional<fs::path> itemPath(IShellItem* item) {
     PWSTR path = nullptr;
-    if (FAILED(dialog->GetResult(&result)) || FAILED(result->GetDisplayName(SIGDN_FILESYSPATH, &path))) return std::nullopt;
+    if (!item || FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &path))) return std::nullopt;
     fs::path p(path);
     CoTaskMemFree(path);
     return p;
+}
+
+std::optional<fs::path> resultPath(IFileDialog* dialog) {
+    ComPtr<IShellItem> result;
+    if (FAILED(dialog->GetResult(&result))) return std::nullopt;
+    return itemPath(result.Get());
 }
 
 void setFolder(IFileDialog* dialog, const fs::path& folder) {
@@ -276,39 +272,36 @@ void setFolder(IFileDialog* dialog, const fs::path& folder) {
     if (SUCCEEDED(SHCreateItemFromParsingName(folder.c_str(), nullptr, IID_PPV_ARGS(&item)))) dialog->SetFolder(item.Get());
 }
 
-std::optional<fs::path> pickFolder(const fs::path& start, const std::wstring& title, const std::wstring& okLabel) {
+/// The folders picked (none when cancelled); one at most unless `multiple`.
+std::vector<fs::path> pickFolders(const fs::path& start, const std::wstring& title, const wchar_t* okLabel, bool multiple) {
     ComPtr<IFileOpenDialog> d;
-    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&d)))) return std::nullopt;
+    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&d)))) return {};
     FILEOPENDIALOGOPTIONS o = 0;
     d->GetOptions(&o);
-    d->SetOptions(o | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
+    d->SetOptions(o | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | (multiple ? FOS_ALLOWMULTISELECT : 0));
     d->SetTitle(title.c_str());
-    d->SetOkButtonLabel(okLabel.c_str());
+    if (okLabel) d->SetOkButtonLabel(okLabel);
     if (!start.empty()) setFolder(d.Get(), start);
-    if (!showDialog(d.Get())) return std::nullopt;
-    return resultPath(d.Get());
-}
-
-void chooseFolders() {
-    ComPtr<IFileOpenDialog> d;
-    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&d)))) return;
-    FILEOPENDIALOGOPTIONS o = 0;
-    d->GetOptions(&o);
-    d->SetOptions(o | FOS_PICKFOLDERS | FOS_ALLOWMULTISELECT | FOS_FORCEFILESYSTEM);
-    d->SetTitle(L"Choose .vbn sequence folders");
-    if (!showDialog(d.Get())) return;
     ComPtr<IShellItemArray> items;
     DWORD count = 0;
-    if (FAILED(d->GetResults(&items)) || FAILED(items->GetCount(&count))) return;
+    if (!showDialog(d.Get()) || FAILED(d->GetResults(&items)) || FAILED(items->GetCount(&count))) return {};
     std::vector<fs::path> paths;
     for (DWORD i = 0; i < count; ++i) {
         ComPtr<IShellItem> it;
-        PWSTR path = nullptr;
-        if (SUCCEEDED(items->GetItemAt(i, &it)) && SUCCEEDED(it->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
-            paths.emplace_back(path);
-            CoTaskMemFree(path);
-        }
+        if (SUCCEEDED(items->GetItemAt(i, &it)))
+            if (auto p = itemPath(it.Get())) paths.push_back(std::move(*p));
     }
+    return paths;
+}
+
+std::optional<fs::path> pickFolder(const fs::path& start, const std::wstring& title, const wchar_t* okLabel) {
+    auto paths = pickFolders(start, title, okLabel, false);
+    if (paths.empty()) return std::nullopt;
+    return paths.front();
+}
+
+void chooseFolders() {
+    auto paths = pickFolders({}, L"Choose .vbn sequence folders", nullptr, true);
     if (!paths.empty()) startScan(std::move(paths), false);
 }
 
@@ -376,7 +369,8 @@ std::optional<std::vector<fs::path>> askBatchDestination(const std::vector<Seque
 
 std::string progressLabel(const Progress& p) {
     std::string s;
-    if (app.batchIndex) s = "Sequence " + std::to_string(*app.batchIndex + 1) + " / " + std::to_string(app.jobCount) + " \xC2\xB7 ";
+    if (app.batchIndex && app.jobNames.size() > 1)
+        s = "Sequence " + std::to_string(*app.batchIndex + 1) + " / " + std::to_string(app.jobNames.size()) + " \xC2\xB7 ";
     s += "Rendering frame " + std::to_string(p.done) + " / " + std::to_string(p.total);
     if (auto fps = p.framesPerSecond()) {
         char buf[32];
@@ -418,7 +412,8 @@ void startExport() {
 
     app.running = true;
     app.cancel = false;
-    app.jobCount = jobs.size();
+    app.jobNames.clear();
+    for (const auto& j : jobs) app.jobNames.push_back(j.sequence.name);
     app.batchIndex.reset();
     app.lastOutputs.clear();
     app.error.clear();
@@ -434,10 +429,7 @@ void startExport() {
     updateControls();
 
     HWND hwnd = app.hwnd;
-    const bool batch = jobs.size() > 1;
-    app.worker = std::thread([hwnd, jobs = std::move(jobs), options, batch] {
-        CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-        const auto start = std::chrono::steady_clock::now();
+    app.worker = std::thread([hwnd, jobs = std::move(jobs), options] {
         auto post = [hwnd] {
             if (!app.pending.posted) {
                 app.pending.posted = true;
@@ -446,7 +438,7 @@ void startExport() {
         };
         auto result = std::make_unique<BatchResult>(runBatch(jobs, options, [&](const BatchEvent& e) {
             std::lock_guard<std::mutex> g(app.lock);
-            if (e.type == BatchEvent::Type::started && batch) {
+            if (e.type == BatchEvent::Type::started) {
                 app.pending.started = e.index;
                 post();
             } else if (e.type == BatchEvent::Type::progress) {
@@ -454,29 +446,24 @@ void startExport() {
                 post();
             }
         }, [] { return app.cancel.load(); }));
-        const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
         // Failures are reported by job index; the UI thread maps them to names.
-        PostMessageW(hwnd, WM_APP_DONE, WPARAM(seconds * 1000), reinterpret_cast<LPARAM>(result.release()));
-        CoUninitialize();
+        PostMessageW(hwnd, WM_APP_DONE, 0, reinterpret_cast<LPARAM>(result.release()));
     });
 }
 
-void onExportDone(std::unique_ptr<BatchResult> result, double seconds) {
+void onExportDone(std::unique_ptr<BatchResult> result) {
     if (app.worker.joinable()) app.worker.join();
     app.running = false;
     app.batchIndex.reset();
     app.lastOutputs = result->exported;
-    // The job list was built from the ticked rows, in order.
-    const auto checked = checkedRows();
+    const size_t count = app.jobNames.size();
     std::string errors;
-    for (const auto& [index, message] : result->failures) {
-        const std::string name = index < checked.size() ? app.rows[checked[index]].sequence.name : "";
-        errors += (errors.empty() ? "" : "\n") + (app.jobCount > 1 ? name + ": " + message : message);
-    }
+    for (const auto& [index, message] : result->failures)
+        errors += (errors.empty() ? "" : "\n") + (count > 1 ? app.jobNames[index] + ": " + message : message);
     app.error = errors;
     char time[32];
-    std::snprintf(time, sizeof time, "%.1f s", seconds);
-    const size_t exported = result->exported.size(), count = app.jobCount;
+    std::snprintf(time, sizeof time, "%.1f s", result->seconds);
+    const size_t exported = result->exported.size();
     std::string status;
     if (count == 1) {
         if (exported) status = "Exported " + utf8(result->exported[0].filename()) + " in " + time + ".";
@@ -493,6 +480,11 @@ void onExportDone(std::unique_ptr<BatchResult> result, double seconds) {
         FLASHWINFO fi{sizeof fi, app.hwnd, FLASHW_TRAY | FLASHW_TIMERNOFG, 0, 0};
         FlashWindowEx(&fi);
     }
+}
+
+void requestCancel() {
+    app.cancel = true;  // the worker stops between frames and posts WM_APP_DONE
+    updateControls();
 }
 
 /// Opens Explorer on each folder holding outputs, with the outputs selected.
@@ -575,9 +567,9 @@ void initDialog(HWND hwnd) {
         ListView_InsertColumn(app.list, i, &c);
     }
     for (Format f : kFormats) SendMessageW(item(IDC_FORMAT), CB_ADDSTRING, 0, LPARAM(wide(formatName(f)).c_str()));
-    SendMessageW(item(IDC_FORMAT), CB_SETCURSEL, 2, 0);  // WebM, as on the Mac
+    SendMessageW(item(IDC_FORMAT), CB_SETCURSEL, kDefaultFormat, 0);
     for (double fps : kFrameRates) SendMessageW(item(IDC_FPS), CB_ADDSTRING, 0, LPARAM(wide(fpsString(fps) + " fps").c_str()));
-    SendMessageW(item(IDC_FPS), CB_SETCURSEL, 5, 0);  // 50 fps
+    SendMessageW(item(IDC_FPS), CB_SETCURSEL, kDefaultFps, 0);
 
     if (SUCCEEDED(CoCreateInstance(CLSID_TaskbarList, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&app.taskbar))) &&
         FAILED(app.taskbar->HrInit()))
@@ -593,18 +585,11 @@ INT_PTR CALLBACK dialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_COMMAND:
         switch (LOWORD(wParam)) {
         case IDOK:
-            if (app.running) {
-                app.cancel = true;
-                updateControls();
-            } else {
-                startExport();
-            }
+            if (app.running) requestCancel();
+            else startExport();
             return TRUE;
         case IDCANCEL:  // Esc: cancels a running export, never closes the window
-            if (app.running) {
-                app.cancel = true;
-                updateControls();
-            }
+            if (app.running) requestCancel();
             return TRUE;
         case IDC_CHOOSE: chooseFolders(); return TRUE;
         case IDC_BG_SWATCH:
@@ -677,7 +662,7 @@ INT_PTR CALLBACK dialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         return TRUE;
     }
     case WM_APP_DONE:
-        onExportDone(std::unique_ptr<BatchResult>(reinterpret_cast<BatchResult*>(lParam)), double(wParam) / 1000);
+        onExportDone(std::unique_ptr<BatchResult>(reinterpret_cast<BatchResult*>(lParam)));
         return TRUE;
     case WM_CLOSE:
         if (app.running) {

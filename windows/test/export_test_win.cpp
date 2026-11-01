@@ -26,6 +26,15 @@ namespace {
 
 bool within(int a, int b, int tolerance) { return std::abs(a - b) <= tolerance; }
 
+/// The Windows build number (19045 on Windows 10 22H2, 22000 and up on Windows 11), from ntdll since
+/// GetVersionEx reports what the manifest declares.
+DWORD windowsBuild() {
+    using RtlGetVersionFn = LONG(WINAPI*)(OSVERSIONINFOW*);
+    OSVERSIONINFOW v{sizeof v};
+    if (auto fn = reinterpret_cast<RtlGetVersionFn>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlGetVersion"))) fn(&v);
+    return v.dwBuildNumber;
+}
+
 vbnx::Options optionsFor(Format f) {
     vbnx::Options o;
     o.format = f;
@@ -164,14 +173,18 @@ void testMP4(const fs::path& root) {
 
     // Above level 5.2's area the encoder needs level 6.2; past 8192 pixels a side it cannot encode at all.
     const auto wide = makeSequence(root, "WIDE", 2, 7680, 4320);
-    try {
+    if (windowsBuild() >= 22000) {  // Windows 11 / Server 2025
         vbnx::exportSequence(wide, optionsFor(Format::mp4), root / "wide.mp4");
         const VideoInfo w8k = readMP4(root / "wide.mp4");
         CHECK(w8k.frames == 2 && w8k.width == 7680 && w8k.height == 4320, "mp4 8K (level 6.2)");
-    } catch (const Error& e) {  // Windows 10's encoder stops at level 5.2: a clear message, nothing left behind
-        std::printf("  (8K MP4 refused by this Windows version, as on Windows 10)\n");
-        CHECK(e.kind == Error::Kind::encoderFailed && std::string(e.what()).find("WebM or PNG") != std::string::npos,
-              "mp4 8K refusal explains itself");
+    } else {  // Windows 10's encoder stays at level 5.2: a clear message, nothing left behind
+        try {
+            vbnx::exportSequence(wide, optionsFor(Format::mp4), root / "wide.mp4");
+            CHECK(false, "mp4 8K refused on Windows 10");
+        } catch (const Error& e) {
+            CHECK(e.kind == Error::Kind::encoderFailed && std::string(e.what()).find("WebM or PNG") != std::string::npos,
+                  "mp4 8K refusal explains itself");
+        }
         CHECK(!fs::exists(root / "wide.mp4"), "no mp4 left when 8K is refused");
     }
     const auto huge = makeSequence(root, "HUGE", 1, 8194, 64);
@@ -248,13 +261,11 @@ private:
             if (!vint(pos, end, id, true) || !vint(pos, end, size, false) || pos + size > end) { failed_ = true; return; }
             switch (id) {
             case 0x18538067: case 0x1F43B675: case 0x1654AE6B: case 0xAE: case 0xE0: case 0x55B0:  // masters
+            case 0x75A1: case 0xA6:  // BlockAdditions, BlockMore
                 walk(pos, pos + size);
                 break;
             case 0xA0:  // BlockGroup
                 file_.blocks.emplace_back();
-                walk(pos, pos + size);
-                break;
-            case 0x75A1: case 0xA6:  // BlockAdditions, BlockMore
                 walk(pos, pos + size);
                 break;
             case 0xA1: {  // Block: track vint, int16 timecode, flags, frame

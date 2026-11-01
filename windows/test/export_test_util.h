@@ -67,17 +67,23 @@ struct TempDir {
     }
 };
 
+/// Writes `count` solid frames NAME_00000.vbn... into `dir`.
+inline void writeFrames(const fs::path& dir, const std::string& name, int count, uint32_t w, uint32_t h,
+                        const std::function<RGBA(int)>& color) {
+    fs::create_directories(dir);
+    for (int i = 0; i < count; ++i) {
+        char file[64];
+        std::snprintf(file, sizeof file, "_%05d.vbn", i);
+        writeFile(dir / vbnx::fromUtf8(name + file), solidVBN(w, h, color(i)));
+    }
+}
+
 /// Writes `count` frames NAME_00000.vbn... into `dir/seq-NAME/` and returns that sequence.
 inline vbnx::Sequence makeSequence(const fs::path& dir, const std::string& name, int count, uint32_t w = 7, uint32_t h = 5,
                                    std::function<RGBA(int)> color = nullptr) {
     if (!color) color = [](int i) { return RGBA{uint8_t(i * 20 % 256), 100, 50, 128}; };
     const fs::path seqDir = dir / vbnx::fromUtf8("seq-" + name);
-    fs::create_directories(seqDir);
-    for (int i = 0; i < count; ++i) {
-        char file[64];
-        std::snprintf(file, sizeof file, "_%05d.vbn", i);
-        writeFile(seqDir / vbnx::fromUtf8(name + file), solidVBN(w, h, color(i)));
-    }
+    writeFrames(seqDir, name, count, w, h, color);
     return vbnx::findSequences(seqDir).at(0);
 }
 

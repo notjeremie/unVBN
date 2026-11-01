@@ -248,14 +248,38 @@ void testYuv709() {
     CHECK(A[0] == 0 && A[4] == 120 && A[8] == 240, "alpha plane");
 
     // Flatten half-transparent red over white, padded from 3x3 to 4x4.
-    const auto flat = vbnx::flattenOnto(std::vector<uint8_t>(36, 0).data(), 3, 3, 255, 255, 255, 4, 4);
+    std::vector<uint8_t> flat, one;
+    vbnx::flattenOnto(std::vector<uint8_t>(36, 0).data(), 3, 3, 255, 255, 255, 4, 4, flat);
     CHECK(flat.size() == 64 && flat[0] == 255 && flat[3] == 255 && flat[63] == 255, "transparent -> background");
     const uint8_t halfRed[4] = {0, 0, 255, 128};
-    const auto one = vbnx::flattenOnto(halfRed, 1, 1, 255, 255, 255, 2, 2);
+    vbnx::flattenOnto(halfRed, 1, 1, 255, 255, 255, 2, 2, one);
     CHECK(one[0] == 127 && one[1] == 127 && one[2] == 255 && one[4] == 255 && one[7] == 255, "composite and padding");
     uint8_t ny[4], nuv[2];
     vbnx::bgraToNV12(flat.data(), 2, 2, {ny, 2}, {nuv, 2});
     CHECK(ny[0] == 235 && nuv[0] == 128 && nuv[1] == 128, "NV12 white");
+
+    // A tall frame is converted in bands of rows, one per core: each row and each chroma row (including the
+    // clamped last one of an odd height) must come out as if converted in one piece.
+    const uint32_t W = 3, H = 1001;
+    std::vector<uint8_t> tall;
+    for (uint32_t r = 0; r < H; ++r)
+        for (uint32_t x = 0; x < W; ++x) tall.insert(tall.end(), {uint8_t(r * 7), uint8_t(r * 3), uint8_t(r), uint8_t(r)});
+    std::vector<uint8_t> ty(W * H), tu(2 * (H + 1) / 2), tv(2 * (H + 1) / 2), ta(W * H);
+    vbnx::bgraToI420(tall.data(), W, H, {ty.data(), W}, {tu.data(), 2}, {tv.data(), 2});
+    vbnx::bgraAlphaPlane(tall.data(), W, H, {ta.data(), W});
+    bool rowsOK = true;
+    for (uint32_t r = 0; r < H; ++r) {
+        uint8_t ey, ecb, ecr;
+        vbnx::rgbToYCbCr709(uint8_t(r), uint8_t(r * 3), uint8_t(r * 7), ey, ecb, ecr);
+        rowsOK &= ty[r * W + 2] == ey && ta[r * W + 1] == uint8_t(r);
+        if (r % 2 == 0) {
+            const uint32_t r1 = std::min(r + 1, H - 1);
+            auto avg = [&](unsigned m) { return (2 * uint8_t(r * m) + 2 * uint8_t(r1 * m) + 2) / 4; };
+            vbnx::rgbToYCbCr709(avg(1), avg(3), avg(7), ey, ecb, ecr);
+            rowsOK &= tu[r / 2 * 2 + 1] == ecb && tv[r / 2 * 2 + 1] == ecr;
+        }
+    }
+    CHECK(rowsOK, "banded conversion matches row by row");
 }
 
 }  // namespace
@@ -265,17 +289,8 @@ void testYuv709() {
 int writeFixture(const char* dir) {
     // Narrow argv is in the system code page on Windows, which is what fs::path(const char*) expects.
     const fs::path root(dir);
-    fs::create_directories(root);
-    for (int i = 0; i < 12; ++i) {
-        char name[32];
-        std::snprintf(name, sizeof name, "LOGO_%05d.vbn", i);
-        writeFile(root / name, solidVBN(32, 18, {uint8_t(i * 20), 100, 50, 200}));
-    }
-    for (int i = 0; i < 5; ++i) {
-        char name[32];
-        std::snprintf(name, sizeof name, "Intro_%05d.vbn", i);
-        writeFile(root / name, solidVBN(16, 16, {0, 0, 255, 255}));
-    }
+    writeFrames(root, "LOGO", 12, 32, 18, [](int i) { return RGBA{uint8_t(i * 20), 100, 50, 200}; });
+    writeFrames(root, "Intro", 5, 16, 16, [](int) { return RGBA{0, 0, 255, 255}; });
     return 0;
 }
 

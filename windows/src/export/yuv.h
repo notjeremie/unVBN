@@ -23,10 +23,10 @@ void bgraToI420(const uint8_t* bgra, uint32_t width, uint32_t height, PlaneOut y
 /// The alpha channel as a full-resolution plane (VP9 alpha streams code it as luma, unscaled).
 void bgraAlphaPlane(const uint8_t* bgra, uint32_t width, uint32_t height, PlaneOut a);
 
-/// Composites straight-alpha BGRA over `bg` into an opaque `outWidth` x `outHeight` BGRA image; the area
-/// beyond the source (padding) is plain background.
-std::vector<uint8_t> flattenOnto(const uint8_t* bgra, uint32_t width, uint32_t height, uint8_t bgR, uint8_t bgG, uint8_t bgB,
-                                 uint32_t outWidth, uint32_t outHeight);
+/// Composites straight-alpha BGRA over `bg` into `out`, an opaque `outWidth` x `outHeight` BGRA image (its
+/// storage is reused from frame to frame); the area beyond the source (padding) is plain background.
+void flattenOnto(const uint8_t* bgra, uint32_t width, uint32_t height, uint8_t bgR, uint8_t bgG, uint8_t bgB,
+                 uint32_t outWidth, uint32_t outHeight, std::vector<uint8_t>& out);
 
 /// BGRA (even `width` and `height`) -> NV12: a Y plane then interleaved CbCr at half resolution.
 void bgraToNV12(const uint8_t* bgra, uint32_t width, uint32_t height, PlaneOut y, PlaneOut uv);

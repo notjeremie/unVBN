@@ -6,14 +6,11 @@
 #include <atomic>
 #include <cstdarg>
 #include <cstdlib>
-#include <chrono>
 #include <cstdio>
-#include <fstream>
 #include <string>
 #include <vector>
 
 #include "export/exporter.h"
-#include "vbn_decode.h"
 
 using namespace vbnx;
 
@@ -115,17 +112,6 @@ BOOL WINAPI onCtrl(DWORD type) {
     return FALSE;
 }
 
-std::string headerSummary(const fs::path& frame) {
-    std::ifstream in(frame, std::ios::binary);
-    uint8_t bytes[vbn::kHeaderSize];
-    if (!in.read(reinterpret_cast<char*>(bytes), sizeof bytes)) return "";
-    vbn::Header h;
-    std::string error;
-    if (!vbn::parseHeader(bytes, sizeof bytes, h, error)) return "";
-    return ", " + std::to_string(h.width) + "\xC3\x97" + std::to_string(h.height) + (h.dxt5 ? " DXT5" : " RGBA") +
-           (h.compressed ? " QuickLZ" : "");
-}
-
 }  // namespace
 
 int wmain(int argc, wchar_t** argv) {
@@ -158,7 +144,7 @@ int wmain(int argc, wchar_t** argv) {
             const std::string v = value();
             char* end = nullptr;
             const double fps = std::strtod(v.c_str(), &end);
-            if (end == v.c_str() || *end || !(fps > 0)) fail("invalid --fps " + v);
+            if (end == v.c_str() || *end || !validFps(fps)) fail("invalid --fps " + v + " (above 0, up to 1000)");
             options.fps = fps;
         } else if (a == "-o" || a == "--output") {
             outputPath = value();
@@ -195,7 +181,7 @@ int wmain(int argc, wchar_t** argv) {
         for (const auto& seq : sequences) {
             const size_t n = seq.frames.size();
             std::string line = seq.name + ": " + std::to_string(n) + " frame" + (n == 1 ? "" : "s") + " in " + utf8(seq.directory);
-            line += headerSummary(seq.frames[0].path);
+            if (const auto h = readHeader(seq.frames[0].path)) line += ", " + describe(*h) + (h->compressed ? " QuickLZ" : "");
             const size_t missing = seq.missingNumbers().size();
             if (missing) line += ", " + std::to_string(missing) + " missing frame number(s)";
             write(stdout, line + "\n");
@@ -213,7 +199,6 @@ int wmain(int argc, wchar_t** argv) {
 
     SetConsoleCtrlHandler(onCtrl, TRUE);
     ProgressBar bar;
-    auto start = std::chrono::steady_clock::now();
     const auto result = runBatch(jobs, options, [&](const BatchEvent& e) {
         const Job& job = jobs[e.index];
         switch (e.type) {
@@ -224,14 +209,12 @@ int wmain(int argc, wchar_t** argv) {
                        " missing frame number(s); they are skipped");
             eprint(job.sequence.name + ": " + std::to_string(job.sequence.frames.size()) + " frames -> " + utf8(job.output));
             bar = ProgressBar();
-            start = std::chrono::steady_clock::now();
             break;
         }
         case BatchEvent::Type::progress: bar.update(e.current); break;
         case BatchEvent::Type::finished:
             if (e.error.empty()) {
-                bar.finish(job.sequence.frames.size(),
-                           std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
+                bar.finish(job.sequence.frames.size(), e.current.elapsed);
             } else {
                 bar.interrupt();
                 eprint("unvbn: " + job.sequence.name + ": " + e.error);

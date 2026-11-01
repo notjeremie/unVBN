@@ -52,11 +52,16 @@ endif()
 
 if(WIN32)
   configure_file(src/version.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/version.h @ONLY)
+  # What every shipped binary gets: strict warnings, Control Flow Guard, the generated version header.
+  function(unvbn_shipped target)
+    target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
+    target_compile_definitions(${target} PRIVATE UNICODE _UNICODE)
+    target_compile_options(${target} PRIVATE /W4 /WX /permissive- /guard:cf)
+    target_link_options(${target} PRIVATE /guard:cf /DYNAMICBASE /NXCOMPAT)
+  endfunction()
+
   add_library(unvbn_wic SHARED src/wic_codec.cpp src/unvbn_wic.def src/unvbn_wic.rc)
-  target_include_directories(unvbn_wic PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
-  target_compile_definitions(unvbn_wic PRIVATE UNICODE _UNICODE)
-  target_compile_options(unvbn_wic PRIVATE /W4 /WX /permissive- /guard:cf)
-  target_link_options(unvbn_wic PRIVATE /guard:cf /DYNAMICBASE /NXCOMPAT)
+  unvbn_shipped(unvbn_wic)
   target_link_libraries(unvbn_wic PRIVATE vbn_decode windowscodecs ole32 shell32 advapi32 gdi32 uuid)
 
   add_executable(wic_test test/wic_test.cpp)
@@ -77,16 +82,15 @@ if(WIN32)
                         windowscodecs mfplat mfreadwrite mfuuid ole32 uuid)
 
   add_executable(unvbn src/cli/main.cpp src/cli/cli.rc)
-  target_include_directories(unvbn PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
-  target_compile_options(unvbn PRIVATE /W4 /WX /permissive- /utf-8 /guard:cf)
-  target_link_options(unvbn PRIVATE /guard:cf)
+  unvbn_shipped(unvbn)
+  target_compile_options(unvbn PRIVATE /utf-8)
   target_link_libraries(unvbn PRIVATE vbn_export)
 
   add_executable(unvbn-export WIN32 src/app/app.cpp src/app/app.rc)
-  target_include_directories(unvbn-export PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
-  target_compile_options(unvbn-export PRIVATE /W4 /WX /permissive- /utf-8 /guard:cf)
+  unvbn_shipped(unvbn-export)
+  target_compile_options(unvbn-export PRIVATE /utf-8)
   # The manifest comes from app.rc (common controls v6, per-monitor DPI).
-  target_link_options(unvbn-export PRIVATE /guard:cf /MANIFEST:NO)
+  target_link_options(unvbn-export PRIVATE /MANIFEST:NO)
   target_link_libraries(unvbn-export PRIVATE vbn_export comctl32 comdlg32 shell32 ole32 uuid)
 
   # THIRD_PARTY_NOTICES.txt next to the binaries (the MSI installs it): the licences of what is linked in.

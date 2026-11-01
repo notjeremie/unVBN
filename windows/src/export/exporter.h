@@ -1,6 +1,6 @@
 // Sequence export: options, progress, the per-sequence exporter and the batch runner. Port of
-// Sources/VBNExport (SequenceExporter, BatchExporter). Portable; the encoders (sinks) are platform code,
-// see sinks.h.
+// Sources/VBNExport (SequenceExporter, BatchExporter). Portable; the encoders (sinks) are platform code
+// (makeSink, in sinks_win.cpp).
 #pragma once
 
 #include <cstdint>
@@ -34,6 +34,15 @@ struct Options {
 
 /// 50 -> "50", 29.97 -> "29.97", 23.976 -> "23.976".
 std::string fpsString(double fps);
+/// A frame rate exportSequence accepts: finite, above 0, at most 1000.
+bool validFps(double fps);
+
+/// "1920×1080".
+std::string sizeText(uint32_t width, uint32_t height);
+/// The header of a .vbn file, or none when it cannot be read or parsed.
+std::optional<vbn::Header> readHeader(const fs::path& frame);
+/// "1920×1080 DXT5" / "1920×1080 RGBA".
+std::string describe(const vbn::Header& header);
 
 /// Where an export stands, with the rate and time-left estimate both front ends display.
 struct Progress {
@@ -88,7 +97,7 @@ struct BatchEvent {
     size_t index;
     /// progress: frames of the whole batch, so a bar, rate and time left never jump back.
     Progress overall;
-    /// progress: frames of the running job.
+    /// progress: frames of the running job. finished: frames done and the job's time.
     Progress current;
     /// finished: empty when the job succeeded.
     std::string error;
@@ -99,6 +108,7 @@ struct BatchResult {
     std::vector<fs::path> exported;
     std::vector<std::pair<size_t, std::string>> failures;  // job index, message
     bool cancelled = false;
+    double seconds = 0;  // the whole batch
 };
 
 /// Exports several sequences one after the other with the same options. A sequence that fails is recorded

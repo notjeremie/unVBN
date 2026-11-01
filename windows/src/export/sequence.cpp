@@ -171,12 +171,17 @@ fs::path outputNamed(Format f, const std::string& name, const fs::path& folder) 
 
 fs::path defaultOutput(Format f, const Sequence& s) { return outputNamed(f, s.name, s.directory.parent_path()); }
 
-std::vector<fs::path> batchOutputs(Format f, const std::vector<Sequence>& sequences, const fs::path& folder) {
+namespace {
+
+/// batchOutputs for `sequences[i]`, i in `indices`.
+std::vector<fs::path> namedOutputs(Format f, const std::vector<Sequence>& sequences, const std::vector<size_t>& indices,
+                                   const fs::path& folder) {
     std::map<std::string, int> counts;
-    for (const auto& s : sequences) ++counts[lowered(s.name)];
+    for (size_t i : indices) ++counts[lowered(sequences[i].name)];
     std::set<std::string> used;
     std::vector<fs::path> outputs;
-    for (const auto& s : sequences) {
+    for (size_t i : indices) {
+        const Sequence& s = sequences[i];
         const std::string base = counts[lowered(s.name)] > 1 ? s.name + " (" + utf8(s.directory.filename()) + ")" : s.name;
         std::string name = base;
         for (int n = 2; !used.insert(lowered(name)).second; ++n) name = base + " " + std::to_string(n);
@@ -185,20 +190,22 @@ std::vector<fs::path> batchOutputs(Format f, const std::vector<Sequence>& sequen
     return outputs;
 }
 
+}  // namespace
+
+std::vector<fs::path> batchOutputs(Format f, const std::vector<Sequence>& sequences, const fs::path& folder) {
+    std::vector<size_t> all(sequences.size());
+    for (size_t i = 0; i < all.size(); ++i) all[i] = i;
+    return namedOutputs(f, sequences, all, folder);
+}
+
 std::vector<fs::path> defaultOutputs(Format f, const std::vector<Sequence>& sequences) {
+    // Group by parent folder, case-insensitively as Windows paths are; names only clash within a folder.
+    std::map<std::string, std::vector<size_t>> byParent;
+    for (size_t i = 0; i < sequences.size(); ++i)
+        byParent[lowered(utf8(sequences[i].directory.parent_path().lexically_normal()))].push_back(i);
     std::vector<fs::path> outputs(sequences.size());
-    // Group by parent folder (case-insensitively, as Windows paths are), keeping first-seen order.
-    std::vector<std::pair<std::string, std::vector<size_t>>> byParent;
-    for (size_t i = 0; i < sequences.size(); ++i) {
-        const std::string key = lowered(utf8(sequences[i].directory.parent_path().lexically_normal()));
-        auto it = std::find_if(byParent.begin(), byParent.end(), [&](const auto& g) { return g.first == key; });
-        if (it == byParent.end()) byParent.push_back({key, {i}});
-        else it->second.push_back(i);
-    }
     for (const auto& [key, indices] : byParent) {
-        std::vector<Sequence> group;
-        for (size_t i : indices) group.push_back(sequences[i]);
-        const auto named = batchOutputs(f, group, sequences[indices[0]].directory.parent_path());
+        const auto named = namedOutputs(f, sequences, indices, sequences[indices[0]].directory.parent_path());
         for (size_t k = 0; k < indices.size(); ++k) outputs[indices[k]] = named[k];
     }
     return outputs;

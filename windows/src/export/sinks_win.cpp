@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstring>
 #include <deque>
+#include <future>
 #include <mutex>
 #include <numeric>
 #include <thread>
@@ -137,14 +138,10 @@ std::pair<UINT32, UINT32> fpsRatio(double fps) {
 /// Windows 11, level 5.2 (4096x2304) on Windows 10.
 class Mp4Sink : public FrameSink {
 public:
-    static constexpr uint32_t kMaxSide = 8192;
-
     Mp4Sink(const fs::path& output, const Options& options, uint32_t width, uint32_t height)
         : output_(output), options_(options), srcW_(width), srcH_(height), w_(paddedSide(width)), h_(paddedSide(height)) {
         if (w_ > kMaxSide || h_ > kMaxSide || macroblocks() > kLevel62Macroblocks)
-            throw Error(Error::Kind::encoderFailed,
-                        "MP4 on Windows is limited to " + std::to_string(kMaxSide) + " pixels per side and 8192x4320 in area; this sequence is " +
-                            std::to_string(width) + "x" + std::to_string(height) + ". Export it as WebM or PNG instead.");
+            tooLarge("MP4 on Windows is limited to 8192 pixels per side and 8192x4320 in area");
         ensureCom();
         static const HRESULT startup = MFStartup(MF_VERSION, MFSTARTUP_LITE);
         if (FAILED(startup))
@@ -159,61 +156,25 @@ public:
         // Windows' software encoder: the same result on every machine (GPU encoders vary and some refuse sizes).
         attrs->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, FALSE);
         check(MFCreateSinkWriterFromURL(output.c_str(), nullptr, attrs.Get(), &writer_), "Cannot create the MP4 file");
-
-        const auto [num, den] = fpsRatio(options.fps);
-        auto common = [&](IMFMediaType* t, const GUID& subtype, bool tagColour) {
-            check(t->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video), "media type");
-            check(t->SetGUID(MF_MT_SUBTYPE, subtype), "media type");
-            check(t->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive), "media type");
-            check(MFSetAttributeSize(t, MF_MT_FRAME_SIZE, w_, h_), "media type");
-            check(MFSetAttributeRatio(t, MF_MT_FRAME_RATE, num, den), "media type");
-            check(MFSetAttributeRatio(t, MF_MT_PIXEL_ASPECT_RATIO, 1, 1), "media type");
-            if (!tagColour) return;
-            // HD broadcast is BT.709, and the frames are converted with that matrix (yuv.cpp).
-            t->SetUINT32(MF_MT_YUV_MATRIX, MFVideoTransferMatrix_BT709);
-            t->SetUINT32(MF_MT_VIDEO_PRIMARIES, MFVideoPrimaries_BT709);
-            t->SetUINT32(MF_MT_TRANSFER_FUNCTION, MFVideoTransFunc_709);
-            t->SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_16_235);
-        };
-        ComPtr<IMFMediaType> out;
-        check(MFCreateMediaType(&out), "media type");
-        common(out.Get(), MFVideoFormat_H264, true);
-        const double bitrate = std::max(2e6, double(w_) * h_ * options.fps * 0.2);
-        check(out->SetUINT32(MF_MT_AVG_BITRATE, UINT32(std::min(bitrate, 4e9))), "media type");
-        check(out->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_High), "media type");
-        // Left alone, the encoder picks a level up to 5.2 and refuses frames above 4096x2304 in area. Above
-        // that, ask for 6.2 (not for smaller frames: a lower level plays on more devices).
-        if (macroblocks() > kLevel52Macroblocks) check(out->SetUINT32(MF_MT_MPEG2_LEVEL, 62), "media type");
-        check(writer_->AddStream(out.Get(), &stream_), "H.264 encoder");
-
-        ComPtr<IMFMediaType> in;
-        check(MFCreateMediaType(&in), "media type");
-        common(in.Get(), MFVideoFormat_NV12, true);
-        check(in->SetUINT32(MF_MT_DEFAULT_STRIDE, w_), "media type");
-        if (const HRESULT hr = writer_->SetInputMediaType(stream_, in.Get(), nullptr); FAILED(hr)) {
-            writer_.Reset();
-            removeQuietly(output_);
-            // Windows 10's encoder ignores the level 6.2 request and stays at 4096x2304 in area.
-            if (hr == MF_E_INVALIDMEDIATYPE)
-                throw Error(Error::Kind::encoderFailed,
-                            "Windows' H.264 encoder on this computer refuses " + std::to_string(width) + "x" + std::to_string(height) +
-                                " frames (Windows 10 stops at 4096x2304 in area, Windows 11 at 8192x4320). Export it as WebM or PNG instead.");
-            check(hr, "H.264 encoder");
+        try {
+            configure();
+        } catch (...) {
+            abort();  // no empty file left behind
+            throw;
         }
-        check(writer_->BeginWriting(), "H.264 encoder");
     }
 
     bool acceptsConcurrentFrames() const override { return false; }
 
     void append(const vbn::Image& image, const Frame&) override {
-        const auto flat = flattenOnto(image.bgra.data(), srcW_, srcH_, options_.background.r, options_.background.g,
-                                      options_.background.b, w_, h_);
+        flattenOnto(image.bgra.data(), srcW_, srcH_, options_.background.r, options_.background.g, options_.background.b, w_,
+                    h_, flat_);
         const DWORD size = w_ * h_ * 3 / 2;
         ComPtr<IMFMediaBuffer> buffer;
         check(MFCreateMemoryBuffer(size, &buffer), "frame buffer");
         BYTE* data = nullptr;
         check(buffer->Lock(&data, nullptr, nullptr), "frame buffer");
-        bgraToNV12(flat.data(), w_, h_, {data, ptrdiff_t(w_)}, {data + size_t(w_) * h_, ptrdiff_t(w_)});
+        bgraToNV12(flat_.data(), w_, h_, {data, ptrdiff_t(w_)}, {data + size_t(w_) * h_, ptrdiff_t(w_)});
         buffer->Unlock();
         check(buffer->SetCurrentLength(size), "frame buffer");
 
@@ -237,12 +198,57 @@ public:
         removeQuietly(output_);
     }
 
-    static uint32_t paddedSide(uint32_t n) { return std::max(34u, (n + 1) & ~1u); }
-
 private:
+    static constexpr uint32_t kMaxSide = 8192;
     // Maximum frame size, in 16x16 macroblocks, of H.264 levels 5.2 and 6.2 (spec table A-1).
     static constexpr uint64_t kLevel52Macroblocks = 36864, kLevel62Macroblocks = 139264;
+
+    static uint32_t paddedSide(uint32_t n) { return std::max(34u, (n + 1) & ~1u); }
     uint64_t macroblocks() const { return uint64_t((w_ + 15) / 16) * ((h_ + 15) / 16); }
+
+    [[noreturn]] void tooLarge(const std::string& limit) const {
+        throw Error(Error::Kind::encoderFailed, limit + "; this sequence is " + std::to_string(srcW_) + "x" +
+                                                    std::to_string(srcH_) + ". Export it as WebM or PNG instead.");
+    }
+
+    /// The H.264 stream and its NV12 input.
+    void configure() {
+        const auto [num, den] = fpsRatio(options_.fps);
+        auto common = [&](IMFMediaType* t, const GUID& subtype) {
+            check(t->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video), "media type");
+            check(t->SetGUID(MF_MT_SUBTYPE, subtype), "media type");
+            check(t->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive), "media type");
+            check(MFSetAttributeSize(t, MF_MT_FRAME_SIZE, w_, h_), "media type");
+            check(MFSetAttributeRatio(t, MF_MT_FRAME_RATE, num, den), "media type");
+            check(MFSetAttributeRatio(t, MF_MT_PIXEL_ASPECT_RATIO, 1, 1), "media type");
+            // HD broadcast is BT.709, and the frames are converted with that matrix (yuv.cpp).
+            t->SetUINT32(MF_MT_YUV_MATRIX, MFVideoTransferMatrix_BT709);
+            t->SetUINT32(MF_MT_VIDEO_PRIMARIES, MFVideoPrimaries_BT709);
+            t->SetUINT32(MF_MT_TRANSFER_FUNCTION, MFVideoTransFunc_709);
+            t->SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_16_235);
+        };
+        ComPtr<IMFMediaType> out;
+        check(MFCreateMediaType(&out), "media type");
+        common(out.Get(), MFVideoFormat_H264);
+        const double bitrate = std::max(2e6, double(w_) * h_ * options_.fps * 0.2);
+        check(out->SetUINT32(MF_MT_AVG_BITRATE, UINT32(std::min(bitrate, 4e9))), "media type");
+        check(out->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_High), "media type");
+        // Left alone, the encoder picks a level up to 5.2 and refuses frames above 4096x2304 in area. Above
+        // that, ask for 6.2 (not for smaller frames: a lower level plays on more devices).
+        if (macroblocks() > kLevel52Macroblocks) check(out->SetUINT32(MF_MT_MPEG2_LEVEL, 62), "media type");
+        check(writer_->AddStream(out.Get(), &stream_), "H.264 encoder");
+
+        ComPtr<IMFMediaType> in;
+        check(MFCreateMediaType(&in), "media type");
+        common(in.Get(), MFVideoFormat_NV12);
+        check(in->SetUINT32(MF_MT_DEFAULT_STRIDE, w_), "media type");
+        const HRESULT hr = writer_->SetInputMediaType(stream_, in.Get(), nullptr);
+        // Windows 10's encoder ignores the level 6.2 request and stays at level 5.2's area.
+        if (hr == MF_E_INVALIDMEDIATYPE && macroblocks() > kLevel52Macroblocks)
+            tooLarge("Windows' H.264 encoder on this computer stops at 4096x2304 in area (Windows 10; Windows 11 goes to 8192x4320)");
+        check(hr, ("The H.264 encoder does not accept " + std::to_string(w_) + "x" + std::to_string(h_) + " frames").c_str());
+        check(writer_->BeginWriting(), "H.264 encoder");
+    }
 
     /// Frame `i`'s start in 100 ns units.
     LONGLONG time(LONGLONG i) const { return std::llround(double(i) * 1e7 / options_.fps); }
@@ -250,6 +256,7 @@ private:
     fs::path output_;
     Options options_;
     uint32_t srcW_, srcH_, w_, h_;
+    std::vector<uint8_t> flat_;  // the frame flattened onto the background, reused
     ComPtr<IMFSinkWriter> writer_;
     DWORD stream_ = 0;
     LONGLONG frameIndex_ = 0;
@@ -361,31 +368,12 @@ public:
           colorImage_(vpx_img_alloc(nullptr, VPX_IMG_FMT_I420, width, height, 16), vpx_img_free),
           alphaImage_(vpx_img_alloc(nullptr, VPX_IMG_FMT_I420, width, height, 16), vpx_img_free), writer_(output) {
         if (!writer_.isOpen()) throw Error(Error::Kind::ioFailed, "Cannot create " + utf8(output));
-        if (!colorImage_ || !alphaImage_) throw std::bad_alloc();
-        colorImage_->cs = VPX_CS_BT_709;
-        colorImage_->range = VPX_CR_STUDIO_RANGE;
-        // The alpha stream codes alpha as luma; its chroma is a constant mid-grey.
-        for (int plane : {VPX_PLANE_U, VPX_PLANE_V})
-            for (uint32_t y = 0; y < (height + 1) / 2; ++y)
-                std::memset(alphaImage_->planes[plane] + ptrdiff_t(y) * alphaImage_->stride[plane], 128, (width + 1) / 2);
-
-        if (!segment_.Init(&writer_)) throw Error(Error::Kind::encoderFailed, "WebM muxer initialisation failed");
-        segment_.set_mode(mkvmuxer::Segment::kFile);
-        segment_.OutputCues(true);
-        segment_.GetSegmentInfo()->set_writing_app("unVBN");
-        track_ = segment_.AddVideoTrack(int(width), int(height), 0);
-        auto* video = static_cast<mkvmuxer::VideoTrack*>(segment_.GetTrackByNumber(track_));
-        if (!track_ || !video) throw Error(Error::Kind::encoderFailed, "WebM muxer: no video track");
-        video->set_codec_id(mkvmuxer::Tracks::kVp9CodecId);
-        if (!video->SetAlphaMode(mkvmuxer::VideoTrack::kAlpha)) throw Error(Error::Kind::encoderFailed, "WebM muxer: no alpha mode");
-        video->set_frame_rate(options.fps);
-        mkvmuxer::Colour colour;
-        colour.set_matrix_coefficients(mkvmuxer::Colour::kBt709);
-        colour.set_range(mkvmuxer::Colour::kBroadcastRange);
-        colour.set_transfer_characteristics(mkvmuxer::Colour::kIturBt709Tc);
-        colour.set_primaries(mkvmuxer::Colour::kIturBt709P);
-        video->SetColour(colour);
-        segment_.CuesTrack(track_);
+        try {
+            configure();
+        } catch (...) {
+            abort();  // no empty file left behind
+            throw;
+        }
     }
 
     bool acceptsConcurrentFrames() const override { return false; }
@@ -396,8 +384,10 @@ public:
                    plane(colorImage_, VPX_PLANE_V));
         bgraAlphaPlane(image.bgra.data(), w_, h_, plane(alphaImage_, VPX_PLANE_Y));
         const bool key = frameIndex_ % kKeyframeInterval == 0;
+        // The two streams are independent encoders: run them side by side (row-MT alone leaves cores idle).
+        auto alpha = std::async(std::launch::async, [&] { alpha_.encode(alphaImage_.get(), frameIndex_, key); });
         color_.encode(colorImage_.get(), frameIndex_, key);
-        alpha_.encode(alphaImage_.get(), frameIndex_, key);
+        alpha.get();
         ++frameIndex_;
         mux();
     }
@@ -421,6 +411,36 @@ public:
 
 private:
     static constexpr int64_t kKeyframeInterval = 128;  // libvpx's own default distance
+
+    /// The images' constant parts and the WebM track.
+    void configure() {
+        const uint32_t width = w_, height = h_;
+        if (!colorImage_ || !alphaImage_) throw std::bad_alloc();
+        colorImage_->cs = VPX_CS_BT_709;
+        colorImage_->range = VPX_CR_STUDIO_RANGE;
+        // The alpha stream codes alpha as luma; its chroma is a constant mid-grey.
+        for (int plane : {VPX_PLANE_U, VPX_PLANE_V})
+            for (uint32_t y = 0; y < (height + 1) / 2; ++y)
+                std::memset(alphaImage_->planes[plane] + ptrdiff_t(y) * alphaImage_->stride[plane], 128, (width + 1) / 2);
+
+        if (!segment_.Init(&writer_)) throw Error(Error::Kind::encoderFailed, "WebM muxer initialisation failed");
+        segment_.set_mode(mkvmuxer::Segment::kFile);
+        segment_.OutputCues(true);
+        segment_.GetSegmentInfo()->set_writing_app("unVBN");
+        track_ = segment_.AddVideoTrack(int(width), int(height), 0);
+        auto* video = static_cast<mkvmuxer::VideoTrack*>(segment_.GetTrackByNumber(track_));
+        if (!track_ || !video) throw Error(Error::Kind::encoderFailed, "WebM muxer: no video track");
+        video->set_codec_id(mkvmuxer::Tracks::kVp9CodecId);
+        if (!video->SetAlphaMode(mkvmuxer::VideoTrack::kAlpha)) throw Error(Error::Kind::encoderFailed, "WebM muxer: no alpha mode");
+        video->set_frame_rate(options_.fps);
+        mkvmuxer::Colour colour;
+        colour.set_matrix_coefficients(mkvmuxer::Colour::kBt709);
+        colour.set_range(mkvmuxer::Colour::kBroadcastRange);
+        colour.set_transfer_characteristics(mkvmuxer::Colour::kIturBt709Tc);
+        colour.set_primaries(mkvmuxer::Colour::kIturBt709P);
+        video->SetColour(colour);
+        segment_.CuesTrack(track_);
+    }
 
     /// Frame `i`'s start in nanoseconds.
     uint64_t time(int64_t i) const { return uint64_t(std::llround(double(i) * 1e9 / options_.fps)); }

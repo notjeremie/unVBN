@@ -1,6 +1,7 @@
 #include "yuv.h"
 
 #include <algorithm>
+#include <thread>
 
 namespace vbnx {
 
@@ -15,16 +16,30 @@ void rgbToYCbCr709(int r, int g, int b, uint8_t& y, uint8_t& cb, uint8_t& cr) {
 
 namespace {
 
+/// Runs `fn(first, end)` over rows [0, rows) in bands, one per core (at least 64 rows each). Bands start on
+/// even rows, so each 4:2:0 chroma row belongs to one band. Frames are converted on the encoder's
+/// critical path, and a 16384x2160 frame is 141 MB: one core alone is the bottleneck.
+template <typename Fn>
+void parallelRows(uint32_t rows, const Fn& fn) {
+    const uint32_t cores = std::clamp(std::thread::hardware_concurrency(), 1u, 16u);
+    const uint32_t band = std::max(64u, ((rows + cores - 1) / cores + 1) & ~1u);
+    std::vector<std::thread> threads;
+    for (uint32_t first = band; first < rows; first += band) threads.emplace_back(fn, first, std::min(rows, first + band));
+    fn(0u, std::min(rows, band));
+    for (auto& t : threads) t.join();
+}
+
 /// Writes luma for every pixel and chroma for every 2x2 block (clamped at odd edges) through `put`.
 template <typename PutChroma>
-void convert420(const uint8_t* bgra, uint32_t width, uint32_t height, PlaneOut y, PutChroma putChroma) {
+void convert420(const uint8_t* bgra, uint32_t width, uint32_t height, PlaneOut y, const PutChroma& putChroma) {
+    parallelRows(height, [&](uint32_t first, uint32_t end) {
     uint8_t cb, cr;
-    for (uint32_t row = 0; row < height; ++row) {
+    for (uint32_t row = first; row < end; ++row) {
         const uint8_t* s = bgra + size_t(row) * width * 4;
         uint8_t* d = y.data + ptrdiff_t(row) * y.stride;
         for (uint32_t x = 0; x < width; ++x, s += 4) rgbToYCbCr709(s[2], s[1], s[0], d[x], cb, cr);
     }
-    for (uint32_t cy = 0; cy < (height + 1) / 2; ++cy) {
+    for (uint32_t cy = first / 2; cy < (end + 1) / 2; ++cy) {
         const uint32_t r0 = cy * 2, r1 = std::min(r0 + 1, height - 1);
         for (uint32_t cx = 0; cx < (width + 1) / 2; ++cx) {
             const uint32_t c0 = cx * 2, c1 = std::min(c0 + 1, width - 1);
@@ -38,6 +53,7 @@ void convert420(const uint8_t* bgra, uint32_t width, uint32_t height, PlaneOut y
             putChroma(cx, cy, cb, cr);
         }
     }
+    });
 }
 
 }  // namespace
@@ -58,18 +74,21 @@ void bgraToNV12(const uint8_t* bgra, uint32_t width, uint32_t height, PlaneOut y
 }
 
 void bgraAlphaPlane(const uint8_t* bgra, uint32_t width, uint32_t height, PlaneOut a) {
-    for (uint32_t row = 0; row < height; ++row) {
-        const uint8_t* s = bgra + size_t(row) * width * 4 + 3;
-        uint8_t* d = a.data + ptrdiff_t(row) * a.stride;
-        for (uint32_t x = 0; x < width; ++x, s += 4) d[x] = *s;
-    }
+    parallelRows(height, [&](uint32_t first, uint32_t end) {
+        for (uint32_t row = first; row < end; ++row) {
+            const uint8_t* s = bgra + size_t(row) * width * 4 + 3;
+            uint8_t* d = a.data + ptrdiff_t(row) * a.stride;
+            for (uint32_t x = 0; x < width; ++x, s += 4) d[x] = *s;
+        }
+    });
 }
 
-std::vector<uint8_t> flattenOnto(const uint8_t* bgra, uint32_t width, uint32_t height, uint8_t bgR, uint8_t bgG, uint8_t bgB,
-                                 uint32_t outWidth, uint32_t outHeight) {
-    std::vector<uint8_t> out(size_t(outWidth) * outHeight * 4);
+void flattenOnto(const uint8_t* bgra, uint32_t width, uint32_t height, uint8_t bgR, uint8_t bgG, uint8_t bgB,
+                 uint32_t outWidth, uint32_t outHeight, std::vector<uint8_t>& out) {
+    out.resize(size_t(outWidth) * outHeight * 4);
     const uint8_t bg[3] = {bgB, bgG, bgR};
-    for (uint32_t row = 0; row < outHeight; ++row) {
+    parallelRows(outHeight, [&](uint32_t first, uint32_t end) {
+    for (uint32_t row = first; row < end; ++row) {
         uint8_t* d = out.data() + size_t(row) * outWidth * 4;
         for (uint32_t x = 0; x < outWidth; ++x, d += 4) {
             if (row < height && x < width) {
@@ -82,7 +101,7 @@ std::vector<uint8_t> flattenOnto(const uint8_t* bgra, uint32_t width, uint32_t h
             d[3] = 255;
         }
     }
-    return out;
+    });
 }
 
 }  // namespace vbnx

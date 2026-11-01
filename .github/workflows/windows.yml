@@ -56,13 +56,16 @@ jobs:
             & "$root\bootstrap-vcpkg.bat" -disableMetrics
           }
           "VCPKG_ROOT=$root" >> $env:GITHUB_ENV
+          # The runner image's vcpkg moves on; its commit changes the binaries' ABI hashes, so it keys the cache.
+          "VCPKG_COMMIT=$(git -C $root rev-parse --short HEAD)" >> $env:GITHUB_ENV
           New-Item -ItemType Directory -Force "${{ github.workspace }}\vcpkg-cache" | Out-Null
           "VCPKG_DEFAULT_BINARY_CACHE=${{ github.workspace }}\vcpkg-cache" >> $env:GITHUB_ENV
 
       - uses: actions/cache@v4
         with:
           path: vcpkg-cache
-          key: vcpkg-${{ matrix.runner }}-${{ matrix.arch }}-${{ hashFiles('windows/vcpkg.json') }}
+          key: vcpkg-${{ matrix.runner }}-${{ matrix.arch }}-${{ hashFiles('windows/vcpkg.json') }}-${{ env.VCPKG_COMMIT }}
+          restore-keys: vcpkg-${{ matrix.runner }}-${{ matrix.arch }}-${{ hashFiles('windows/vcpkg.json') }}-
 
       - name: Build
         run: |
