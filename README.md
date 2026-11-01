@@ -118,9 +118,10 @@ Ctrl+C stops an export and deletes the unfinished file.
   showed blue). Compressed (DXT5) files were fine. Re-export anything made from uncompressed files with an
   older version.
 - **WebM on Intel Macs** is slower than on Apple silicon (the bundled encoder uses plain C there).
-- **MP4 on Windows** uses Windows' own H.264 encoder, which refuses frames with a side of 32 pixels or less
-  and very large ones (8K): tiny animations are padded to 34 pixels with the background colour, and
-  oversized ones fail with a message. WebM and PNG have no such limit. On Windows N editions, MP4 needs the
+- **MP4 on Windows** uses Windows' own H.264 encoder, which refuses frames with a side of 32 pixels or less,
+  a side over 8192 pixels, or an area over 8192×4320: tiny animations are padded to 34 pixels with the
+  background colour, and oversized ones (a 16384-pixel video wall, say) fail at once with a message.
+  WebM and PNG have no such limit. On Windows N editions, MP4 needs the
   Media Feature Pack.
 - **Transparency**: every real `.vbn` checked so far was opaque; transparency handling is verified on test
   images.

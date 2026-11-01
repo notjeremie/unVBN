@@ -162,6 +162,16 @@ void testMP4(const fs::path& root) {
     const VideoInfo t = readMP4(root / "tiny.mp4");
     CHECK(t.frames == 3 && t.width == 34 && t.height == 34, "mp4 tiny size padded");
 
+    // Above level 5.2's area the encoder needs level 6.2; past 8192 pixels a side it cannot encode at all.
+    const auto wide = makeSequence(root, "WIDE", 2, 7680, 4320);
+    vbnx::exportSequence(wide, optionsFor(Format::mp4), root / "wide.mp4");
+    const VideoInfo w8k = readMP4(root / "wide.mp4");
+    CHECK(w8k.frames == 2 && w8k.width == 7680 && w8k.height == 4320, "mp4 8K (level 6.2)");
+    const auto huge = makeSequence(root, "HUGE", 1, 8194, 64);
+    expectError(Error::Kind::encoderFailed, [&] { vbnx::exportSequence(huge, optionsFor(Format::mp4), root / "huge.mp4"); },
+                "mp4 wider than 8192");
+    CHECK(!fs::exists(root / "huge.mp4"), "no mp4 left when too wide");
+
     // 29.97 fps keeps its exact duration.
     auto ntsc = optionsFor(Format::mp4);
     ntsc.fps = 29.97;

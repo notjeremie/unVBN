@@ -133,10 +133,17 @@ std::pair<UINT32, UINT32> fpsRatio(double fps) {
 /// H.264 in MP4 through the Media Foundation sink writer and Windows' own encoder. No alpha: frames are
 /// flattened onto the background colour, and padded right/bottom with it where the encoder needs a bigger
 /// frame: 4:2:0 needs even sizes, and Windows' encoder refuses any side of 32 pixels or less.
+/// Its upper limits: 8192 pixels per side, and the frame area of H.264 level 6.2 (8192x4320 passes).
 class Mp4Sink : public FrameSink {
 public:
+    static constexpr uint32_t kMaxSide = 8192;
+
     Mp4Sink(const fs::path& output, const Options& options, uint32_t width, uint32_t height)
         : output_(output), options_(options), srcW_(width), srcH_(height), w_(paddedSide(width)), h_(paddedSide(height)) {
+        if (w_ > kMaxSide || h_ > kMaxSide || macroblocks() > kLevel62Macroblocks)
+            throw Error(Error::Kind::encoderFailed,
+                        "MP4 on Windows is limited to " + std::to_string(kMaxSide) + " pixels per side and 8192x4320 in area; this sequence is " +
+                            std::to_string(width) + "x" + std::to_string(height) + ". Export it as WebM or PNG instead.");
         ensureCom();
         static const HRESULT startup = MFStartup(MF_VERSION, MFSTARTUP_LITE);
         if (FAILED(startup))
@@ -173,6 +180,9 @@ public:
         const double bitrate = std::max(2e6, double(w_) * h_ * options.fps * 0.2);
         check(out->SetUINT32(MF_MT_AVG_BITRATE, UINT32(std::min(bitrate, 4e9))), "media type");
         check(out->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_High), "media type");
+        // Left alone, the encoder picks a level up to 5.2 and refuses frames above 4096x2304 in area. Above
+        // that, ask for 6.2 (not for smaller frames: a lower level plays on more devices).
+        if (macroblocks() > kLevel52Macroblocks) check(out->SetUINT32(MF_MT_MPEG2_LEVEL, 62), "media type");
         check(writer_->AddStream(out.Get(), &stream_), "H.264 encoder");
 
         ComPtr<IMFMediaType> in;
@@ -221,6 +231,10 @@ public:
     static uint32_t paddedSide(uint32_t n) { return std::max(34u, (n + 1) & ~1u); }
 
 private:
+    // Maximum frame size, in 16x16 macroblocks, of H.264 levels 5.2 and 6.2 (spec table A-1).
+    static constexpr uint64_t kLevel52Macroblocks = 36864, kLevel62Macroblocks = 139264;
+    uint64_t macroblocks() const { return uint64_t((w_ + 15) / 16) * ((h_ + 15) / 16); }
+
     /// Frame `i`'s start in 100 ns units.
     LONGLONG time(LONGLONG i) const { return std::llround(double(i) * 1e7 / options_.fps); }
 
